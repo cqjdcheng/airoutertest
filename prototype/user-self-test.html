@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>自助测试页原型</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-kicker">User Side</span>
+        <div class="brand-title">自助测试<br>Prototype</div>
+        <div class="brand-subtitle">这个页面的核心不是炫技，而是让用户放心地验证一个站点到底能不能用、是不是在糊弄人。</div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">用户端页面</div>
+        <div class="nav-list">
+          <a class="nav-link" href="user-home.html"><span>首页 / 发现页</span><small>01</small></a>
+          <a class="nav-link" href="user-ranking.html"><span>模型排行页</span><small>02</small></a>
+          <a class="nav-link" href="user-site-detail.html"><span>中转站详情页</span><small>03</small></a>
+          <a class="nav-link active" href="user-self-test.html"><span>自助测试页</span><small>04</small></a>
+          <a class="nav-link" href="user-submit-site.html"><span>站点提交页</span><small>05</small></a>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        自助测试页必须把安全说明和测试结果放在同一层级。用户愿不愿意输入 Key，取决于他能不能一眼看懂平台怎么处理这个 Key。
+      </div>
+    </aside>
+
+    <main class="content">
+      <div class="topbar">
+        <div class="crumbs">
+          <span>用户端</span>
+          <span>/</span>
+          <span>自助测试</span>
+        </div>
+        <div class="topbar-actions">
+          <span class="pill">Key 不落库</span>
+          <span class="pill">日志脱敏</span>
+          <span class="pill">单次任务临时使用</span>
+        </div>
+      </div>
+
+      <section class="hero">
+        <div class="hero-grid">
+          <div>
+            <div class="brand-kicker">Test Before Recharge</div>
+            <h1 class="hero-title">怀疑这个站不靠谱？先测，再决定</h1>
+            <p class="hero-copy">
+              自助测试页应让用户明确知道自己输入什么、平台会返回什么、以及平台不会保存什么。页面右侧直接显示最近一次测试结果，避免来回跳转。
+            </p>
+            <div class="hero-badges">
+              <span class="chip dark">输入：站点地址 / API Key / 模型</span>
+              <span class="chip dark">输出：可用性 / 速度 / 风险</span>
+            </div>
+          </div>
+
+          <div class="hero-panel">
+            <h3>测试结论范围</h3>
+            <div class="list" style="margin-top: 12px;">
+              <div class="list-item"><strong>能不能连通</strong><span class="status green">可测</span></div>
+              <div class="list-item"><strong>返回快不快</strong><span class="status blue">可测</span></div>
+              <div class="list-item"><strong>有没有风险迹象</strong><span class="status red">可测</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="card-grid">
+          <div class="form-card span-6">
+            <span class="chip amber">输入区</span>
+            <h3>发起一次测试</h3>
+            <p>原型中默认使用简洁三字段，避免把页面变成“高级设置表单”。</p>
+
+            <div class="form-grid">
+              <div class="form-field full">
+                <label class="form-label">站点地址</label>
+                <input class="input" value="https://api.relayport.ai/v1">
+              </div>
+              <div class="form-field full">
+                <label class="form-label">API Key</label>
+                <input class="input" value="sk-relayport-demo-••••••••••">
+              </div>
+              <div class="form-field full">
+                <label class="form-label">模型名称</label>
+                <input class="input" value="gpt-4.1-mini">
+              </div>
+            </div>
+
+            <div class="callout" style="margin-top: 16px;">
+              平台仅在当前测试任务内使用 API Key，不做持久化存储；日志中仅保留脱敏片段。正式实现时需要频控、防滥用和异常审计。
+            </div>
+
+            <div style="margin-top: 18px;">
+              <a class="button" href="#">发起测试</a>
+            </div>
+          </div>
+
+          <div class="card span-6">
+            <span class="chip teal">结果区</span>
+            <h3>最近一次测试结果</h3>
+            <div class="grid-2" style="margin-top: 16px;">
+              <div class="mini-kpi">
+                <span>连接结果</span>
+                <strong>成功</strong>
+              </div>
+              <div class="mini-kpi">
+                <span>风险状态</span>
+                <strong>中风险</strong>
+              </div>
+              <div class="mini-kpi">
+                <span>首 token</span>
+                <strong>0.91s</strong>
+              </div>
+              <div class="mini-kpi">
+                <span>完整响应</span>
+                <strong>6.8s</strong>
+              </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="list">
+              <div class="list-item">
+                <div>
+                  <strong>风险判断</strong>
+                  命中 1 条轻度规则：随机种子变化时，上游标识发生切换，需继续观察。
+                </div>
+                <span class="status amber">风险分 36</span>
+              </div>
+              <div class="list-item">
+                <div>
+                  <strong>响应摘要</strong>
+                  测试问题返回结构正常，数学题结果一致，未命中缓存假响应规则。
+                </div>
+              </div>
+              <div class="list-item">
+                <div>
+                  <strong>建议</strong>
+                  若准备长期使用，建议再做 3-5 次重复测试，并关注高峰时段稳定性。
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="card-grid">
+          <div class="card span-7">
+            <div class="section-header">
+              <div>
+                <h3>测试流程可视化</h3>
+                <p>这里不是技术实现图，而是用户感知的流程，帮助他理解这个功能值不值得信任。</p>
+              </div>
+            </div>
+            <div class="list">
+              <div class="list-item">
+                <div>
+                  <strong>1. 输入测试参数</strong>
+                  站点地址、API Key、模型名
+                </div>
+                <span class="status blue">开始</span>
+              </div>
+              <div class="list-item">
+                <div>
+                  <strong>2. 发起真实请求</strong>
+                  检测能否调用、返回速度、响应结构
+                </div>
+                <span class="status blue">执行</span>
+              </div>
+              <div class="list-item">
+                <div>
+                  <strong>3. 应用反造假规则</strong>
+                  检查缓存、降级、偷换、伪造迹象
+                </div>
+                <span class="status red">分析</span>
+              </div>
+              <div class="list-item">
+                <div>
+                  <strong>4. 输出可读结论</strong>
+                  返回成功率、速度、风险标签和证据摘要
+                </div>
+                <span class="status green">完成</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card span-5">
+            <span class="chip red">顾虑处理</span>
+            <h3>页面必须正面回应的顾虑</h3>
+            <div class="stack" style="margin-top: 14px;">
+              <div class="mini-kpi">
+                <span>顾虑 1</span>
+                <strong>Key 会不会被保存？</strong>
+              </div>
+              <div class="mini-kpi">
+                <span>顾虑 2</span>
+                <strong>测试会不会消耗很多额度？</strong>
+              </div>
+              <div class="mini-kpi">
+                <span>顾虑 3</span>
+                <strong>测试结果是不是可信？</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

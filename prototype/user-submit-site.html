@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>站点提交页原型</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-kicker">User Side</span>
+        <div class="brand-title">站点提交<br>Prototype</div>
+        <div class="brand-subtitle">提交页只做一件事：让新增站点进入平台审核流，不在这里做复杂资料上传和运营包装。</div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">用户端页面</div>
+        <div class="nav-list">
+          <a class="nav-link" href="user-home.html"><span>首页 / 发现页</span><small>01</small></a>
+          <a class="nav-link" href="user-ranking.html"><span>模型排行页</span><small>02</small></a>
+          <a class="nav-link" href="user-site-detail.html"><span>中转站详情页</span><small>03</small></a>
+          <a class="nav-link" href="user-self-test.html"><span>自助测试页</span><small>04</small></a>
+          <a class="nav-link active" href="user-submit-site.html"><span>站点提交页</span><small>05</small></a>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        提交页在 MVP 中是公开入口，但不自动上架。页面重点应放在降低提交门槛和明确审核规则。
+      </div>
+    </aside>
+
+    <main class="content">
+      <div class="topbar">
+        <div class="crumbs">
+          <span>用户端</span>
+          <span>/</span>
+          <span>站点提交</span>
+        </div>
+        <div class="topbar-actions">
+          <span class="pill">公开提交</span>
+          <span class="pill">人工审核</span>
+          <span class="pill">未审核不展示</span>
+        </div>
+      </div>
+
+      <section class="hero">
+        <div class="hero-grid">
+          <div>
+            <div class="brand-kicker">Submit A Relay</div>
+            <h1 class="hero-title">提交一个值得被收录的中转站</h1>
+            <p class="hero-copy">
+              这个页面的目标很单纯：收集必要信息，把站点放进后台审核流。原型里不做复杂营销组件，避免把“收录入口”做成“招商页”。
+            </p>
+          </div>
+          <div class="hero-panel">
+            <h3>审核说明</h3>
+            <div class="list" style="margin-top: 12px;">
+              <div class="list-item"><strong>1. 提交后进入人工审核</strong></div>
+              <div class="list-item"><strong>2. 平台会抓取价格与基础信息</strong></div>
+              <div class="list-item"><strong>3. 审核通过后才在前台展示</strong></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="card-grid">
+          <div class="form-card span-8">
+            <span class="chip amber">提交表单</span>
+            <h3>基础信息</h3>
+            <div class="form-grid">
+              <div class="form-field">
+                <label class="form-label">站点名称</label>
+                <input class="input" value="Aurora Relay">
+              </div>
+              <div class="form-field">
+                <label class="form-label">站点地址</label>
+                <input class="input" value="https://aurora-relay.example">
+              </div>
+              <div class="form-field">
+                <label class="form-label">联系人或渠道</label>
+                <input class="input" value="Telegram @aurora_relay">
+              </div>
+              <div class="form-field">
+                <label class="form-label">主要支持模型</label>
+                <input class="input" value="OpenAI / Claude / Gemini">
+              </div>
+              <div class="form-field full">
+                <label class="form-label">补充说明</label>
+                <textarea class="textarea">支持企业开票，近期有新用户首充活动，希望纳入价格和稳定性测试。</textarea>
+              </div>
+            </div>
+            <div style="margin-top: 18px;">
+              <a class="button" href="#">提交审核</a>
+            </div>
+          </div>
+
+          <div class="card span-4">
+            <span class="chip teal">审核重点</span>
+            <h3>平台会重点检查</h3>
+            <div class="list" style="margin-top: 12px;">
+              <div class="list-item"><strong>价格是否可抓取</strong></div>
+              <div class="list-item"><strong>站点是否可正常访问</strong></div>
+              <div class="list-item"><strong>模型是否真实可用</strong></div>
+              <div class="list-item"><strong>是否存在明显造假迹象</strong></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

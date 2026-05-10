@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>后台总览原型</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-kicker">Admin Side</span>
+        <div class="brand-title">运营后台<br>总览</div>
+        <div class="brand-subtitle">后台原型不追求“好看”，重点是让你一眼看出今天要处理什么：站点、任务、告警、审核。</div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">后台页面</div>
+        <div class="nav-list">
+          <a class="nav-link active" href="admin-dashboard.html"><span>后台总览</span><small>06</small></a>
+          <a class="nav-link" href="admin-sites.html"><span>中转站管理</span><small>07</small></a>
+          <a class="nav-link" href="admin-risk-center.html"><span>反造假 / 测试中心</span><small>08</small></a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">回到用户端</div>
+        <div class="nav-list">
+          <a class="nav-link" href="index.html"><span>原型导航</span><small>Hub</small></a>
+          <a class="nav-link" href="user-home.html"><span>用户端首页</span><small>01</small></a>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        后台首期只有一个管理员，因此页面优先级是“高密度信息 + 快速处置”，而不是复杂权限模型。
+      </div>
+    </aside>
+
+    <main class="content">
+      <div class="topbar">
+        <div class="crumbs">
+          <span>后台</span>
+          <span>/</span>
+          <span>总览</span>
+        </div>
+        <div class="topbar-actions">
+          <span class="pill">价格抓取：每小时</span>
+          <span class="pill">测试任务：每小时</span>
+          <a class="button" href="admin-risk-center.html">查看风险中心</a>
+        </div>
+      </div>
+
+      <section class="hero">
+        <div class="hero-grid">
+          <div>
+            <div class="brand-kicker">Ops Console</div>
+            <h1 class="hero-title">今天最该处理的，不是所有数据，而是异常</h1>
+            <p class="hero-copy">
+              后台总览页要把管理员的注意力拉到三件事上：待审核站点、高风险告警、失败任务。其他内容作为辅助上下文，不应抢主视线。
+            </p>
+          </div>
+          <div class="hero-panel">
+            <h3>快捷动作</h3>
+            <div class="chip-row" style="margin-top: 14px;">
+              <span class="chip dark">新增站点</span>
+              <span class="chip dark">手动抓取</span>
+              <span class="chip dark">手动补测</span>
+              <span class="chip dark">审核提交</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="metric-grid">
+          <div class="card metric-card">
+            <div class="metric-label">已收录站点</div>
+            <div class="metric-value">132</div>
+            <div class="metric-trend">其中 118 个正常监控</div>
+          </div>
+          <div class="card metric-card">
+            <div class="metric-label">待审核提交</div>
+            <div class="metric-value">9</div>
+            <div class="metric-trend">3 个来自公开提交入口</div>
+          </div>
+          <div class="card metric-card">
+            <div class="metric-label">失败测试任务</div>
+            <div class="metric-value">27</div>
+            <div class="metric-trend">主要集中在 4 个站点</div>
+          </div>
+          <div class="card metric-card">
+            <div class="metric-label">高风险告警</div>
+            <div class="metric-value">11</div>
+            <div class="metric-trend">7 个疑似降级，4 个疑似缓存</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="card-grid">
+          <div class="card span-4">
+            <span class="chip amber">待办</span>
+            <h3>待审核站点</h3>
+            <div class="list" style="margin-top: 12px;">
+              <div class="list-item"><strong>Aurora Relay</strong><span class="status amber">待审</span></div>
+              <div class="list-item"><strong>DeepPool Hub</strong><span class="status amber">待审</span></div>
+              <div class="list-item"><strong>Northern API</strong><span class="status amber">待审</span></div>
+            </div>
+          </div>
+
+          <div class="card span-4">
+            <span class="chip red">告警</span>
+            <h3>高风险站点</h3>
+            <div class="list" style="margin-top: 12px;">
+              <div class="list-item"><strong>Zen Relay</strong><span class="status red">82</span></div>
+              <div class="list-item"><strong>BlueGate</strong><span class="status amber">67</span></div>
+              <div class="list-item"><strong>AMS Relay Pool</strong><span class="status amber">58</span></div>
+            </div>
+          </div>
+
+          <div class="card span-4">
+            <span class="chip teal">任务</span>
+            <h3>最近失败任务</h3>
+            <div class="list" style="margin-top: 12px;">
+              <div class="list-item"><strong>Claude 4 Sonnet 测试失败</strong><span class="status red">超时</span></div>
+              <div class="list-item"><strong>Gemini 价格抓取失败</strong><span class="status amber">DOM 变更</span></div>
+              <div class="list-item"><strong>Zen Relay 补测待执行</strong><span class="status blue">排队中</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

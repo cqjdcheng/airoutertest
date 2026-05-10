@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>模型排行页原型</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-kicker">User Side</span>
+        <div class="brand-title">模型排行<br>Prototype</div>
+        <div class="brand-subtitle">这个页面承担真正的比价和决策责任，所以数据列必须围绕“买之前要知道什么”。</div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">用户端页面</div>
+        <div class="nav-list">
+          <a class="nav-link" href="user-home.html"><span>首页 / 发现页</span><small>01</small></a>
+          <a class="nav-link active" href="user-ranking.html"><span>模型排行页</span><small>02</small></a>
+          <a class="nav-link" href="user-site-detail.html"><span>中转站详情页</span><small>03</small></a>
+          <a class="nav-link" href="user-self-test.html"><span>自助测试页</span><small>04</small></a>
+          <a class="nav-link" href="user-submit-site.html"><span>站点提交页</span><small>05</small></a>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        排行页默认应支持模型切换、榜单类型切换、企业筛选和风险摘要。它不是一张价格表，而是一张“充值决策表”。
+      </div>
+    </aside>
+
+    <main class="content">
+      <div class="topbar">
+        <div class="crumbs">
+          <span>用户端</span>
+          <span>/</span>
+          <span>模型排行</span>
+        </div>
+        <div class="topbar-actions">
+          <span class="pill">模型：GPT-4.1 mini</span>
+          <span class="pill">榜单：综合性价比</span>
+          <a class="button" href="user-site-detail.html">进入站点详情</a>
+        </div>
+      </div>
+
+      <section class="hero">
+        <div class="hero-grid">
+          <div>
+            <div class="brand-kicker">Ranking Logic</div>
+            <h1 class="hero-title">同一个模型，不同站点的决策面板</h1>
+            <p class="hero-copy">
+              这里聚焦同一模型在不同中转站的可比信息。表格字段必须能回答五个问题：贵不贵、稳不稳、快不快、真不真、能不能满足企业要求。
+            </p>
+            <div class="hero-badges">
+              <span class="chip dark">主排序：实际折算价</span>
+              <span class="chip dark">展示：24h / 7d 指标</span>
+              <span class="chip dark">带风险分和证据入口</span>
+            </div>
+          </div>
+          <div class="hero-panel">
+            <h3>切换栏示意</h3>
+            <div class="chip-row" style="margin-top: 14px;">
+              <span class="chip amber">最便宜</span>
+              <span class="chip teal">最稳定</span>
+              <span class="chip dark">综合性价比</span>
+              <span class="chip">整体评分</span>
+            </div>
+            <div class="chip-row" style="margin-top: 14px;">
+              <span class="chip">支持开票</span>
+              <span class="chip">支持退款</span>
+              <span class="chip">有文档</span>
+              <span class="chip red">排除高风险</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="filter-bar">
+          <span class="chip amber">模型：GPT-4.1 mini</span>
+          <span class="chip">仅看支持开票</span>
+          <span class="chip">仅看支持退款</span>
+          <span class="chip">仅看有文档</span>
+          <span class="chip">最低稳定性 95%</span>
+          <span class="chip red">隐藏高风险站点</span>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="grid-4">
+          <div class="card metric-card">
+            <div class="metric-label">官方参考价</div>
+            <div class="metric-value">$0.40</div>
+            <div class="metric-trend">输入 / 1M tokens</div>
+          </div>
+          <div class="card metric-card">
+            <div class="metric-label">当前最优折算价</div>
+            <div class="metric-value">$0.32</div>
+            <div class="metric-trend">比官方低 20%</div>
+          </div>
+          <div class="card metric-card">
+            <div class="metric-label">最高稳定站点</div>
+            <div class="metric-value">99.1%</div>
+            <div class="metric-trend">7 天稳定性</div>
+          </div>
+          <div class="card metric-card">
+            <div class="metric-label">风险站点占比</div>
+            <div class="metric-value">12%</div>
+            <div class="metric-trend">当前模型供应里高风险占比</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="table-card">
+          <div class="section-header">
+            <div>
+              <h3>GPT-4.1 mini 站点排行</h3>
+              <p>原型里表格字段严格围绕需求文档中的价格、可用性、稳定性、速度和风险。</p>
+            </div>
+            <a class="ghost-button" href="user-self-test.html">手动验证一个站点</a>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>站点</th>
+                <th>价格</th>
+                <th>24h 可用性</th>
+                <th>7d 稳定性</th>
+                <th>速度</th>
+                <th>企业条件</th>
+                <th>风险</th>
+                <th>动作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <span class="site-name">RelayPort</span>
+                  <span class="subtle">2024-08 收录 · 站龄 14 个月</span>
+                </td>
+                <td>
+                  $0.32 / $1.27
+                  <span class="subtle">标价 $0.36 / 实际折算价 $0.32</span>
+                </td>
+                <td>
+                  98.8%
+                  <div class="progress"><span style="width: 98.8%;"></span></div>
+                </td>
+                <td>
+                  97.9%
+                  <div class="progress"><span style="width: 97.9%;"></span></div>
+                </td>
+                <td>
+                  0.82s / 6.3s
+                  <span class="subtle">首 token / 完整响应</span>
+                </td>
+                <td>
+                  <span class="chip green">开票</span>
+                  <span class="chip green">退款</span>
+                  <span class="chip green">文档</span>
+                </td>
+                <td>
+                  <span class="status green">低风险</span>
+                  <span class="subtle">风险分 14</span>
+                </td>
+                <td><a class="ghost-button" href="user-site-detail.html">详情</a></td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="site-name">North Proxy</span>
+                  <span class="subtle">企业采购偏好</span>
+                </td>
+                <td>
+                  $0.35 / $1.42
+                  <span class="subtle">标价略高，稳定性优</span>
+                </td>
+                <td>
+                  99.2%
+                  <div class="progress"><span style="width: 99.2%;"></span></div>
+                </td>
+                <td>
+                  99.1%
+                  <div class="progress"><span style="width: 99.1%;"></span></div>
+                </td>
+                <td>
+                  0.94s / 5.9s
+                  <span class="subtle">完整响应更快</span>
+                </td>
+                <td>
+                  <span class="chip green">开票</span>
+                  <span class="chip green">文档</span>
+                </td>
+                <td>
+                  <span class="status amber">中风险</span>
+                  <span class="subtle">风险分 33 · 上游切换频繁</span>
+                </td>
+                <td><a class="ghost-button" href="user-site-detail.html">详情</a></td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="site-name">Zen Relay</span>
+                  <span class="subtle">低价但争议大</span>
+                </td>
+                <td>
+                  $0.26 / $1.01
+                  <span class="subtle">价格最低，但存在明显风险</span>
+                </td>
+                <td>
+                  93.7%
+                  <div class="progress"><span style="width: 93.7%;"></span></div>
+                </td>
+                <td>
+                  88.6%
+                  <div class="progress"><span style="width: 88.6%;"></span></div>
+                </td>
+                <td>
+                  0.49s / 3.1s
+                  <span class="subtle">速度异常快</span>
+                </td>
+                <td>
+                  <span class="chip">无开票</span>
+                  <span class="chip">无退款</span>
+                </td>
+                <td>
+                  <span class="status red">高风险</span>
+                  <span class="subtle">风险分 82 · 疑似降级</span>
+                </td>
+                <td><a class="ghost-button" href="user-site-detail.html">详情</a></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="card-grid">
+          <div class="card span-4">
+            <span class="chip amber">企业视角</span>
+            <h3>企业用户为什么会用这页</h3>
+            <p>不是看最低价，而是能一眼筛掉不支持开票、退款、文档和稳定性不够的站点。</p>
+          </div>
+          <div class="card span-4">
+            <span class="chip teal">个人开发者视角</span>
+            <h3>个人开发者为什么会用这页</h3>
+            <p>比的是“实际折算价”，不是站点标价，避免被充值比例和赠送活动误导。</p>
+          </div>
+          <div class="card span-4">
+            <span class="chip red">核心差异</span>
+            <h3>为什么要把风险字段放进表格</h3>
+            <p>因为便宜本身不是价值。用户要的是“便宜但不是假的”。风险字段不能埋在详情页里。</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

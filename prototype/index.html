@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI 中转比价网原型导航</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-kicker">Prototype Hub</span>
+        <div class="brand-title">CheapAI<br>Prototype</div>
+        <div class="brand-subtitle">面向 AI 中转站收录、比价、测试和反造假的页面原型导航。</div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">用户端</div>
+        <div class="nav-list">
+          <a class="nav-link" href="user-home.html"><span>首页 / 发现页</span><small>01</small></a>
+          <a class="nav-link" href="user-ranking.html"><span>模型排行页</span><small>02</small></a>
+          <a class="nav-link" href="user-site-detail.html"><span>中转站详情页</span><small>03</small></a>
+          <a class="nav-link" href="user-self-test.html"><span>自助测试页</span><small>04</small></a>
+          <a class="nav-link" href="user-submit-site.html"><span>站点提交页</span><small>05</small></a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">后台</div>
+        <div class="nav-list">
+          <a class="nav-link" href="admin-dashboard.html"><span>后台总览</span><small>06</small></a>
+          <a class="nav-link" href="admin-sites.html"><span>中转站管理</span><small>07</small></a>
+          <a class="nav-link" href="admin-risk-center.html"><span>反造假 / 测试中心</span><small>08</small></a>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        这套原型重点验证信息架构和模块优先级，不包含真实接口。用户端强调“价格可比、稳定性可见、风险可解释”，后台强调“收录、测试、审查”。
+      </div>
+    </aside>
+
+    <main class="content">
+      <div class="topbar">
+        <div class="crumbs">
+          <span>CheapAI</span>
+          <span>/</span>
+          <span>页面原型</span>
+        </div>
+        <div class="topbar-actions">
+          <span class="pill">8 个核心页面</span>
+          <span class="pill">用户端 + 后台</span>
+          <a class="button" href="user-home.html">从首页开始预览</a>
+        </div>
+      </div>
+
+      <section class="hero">
+        <div class="hero-grid">
+          <div>
+            <div class="brand-kicker">Wireframe Direction</div>
+            <h1 class="hero-title">先把决策路径画对，再谈实现细节</h1>
+            <p class="hero-copy">
+              原型围绕需求文档中的四条主线组织：找便宜、找稳定、识别造假、发起测试。页面不是装饰图，而是信息架构和操作流的第一版验证。
+            </p>
+            <div class="hero-badges">
+              <span class="chip dark">实际折算价为主比价字段</span>
+              <span class="chip dark">24h / 7d / 30d 稳定性视图</span>
+              <span class="chip dark">状态标签 + 风险分 + 证据记录</span>
+            </div>
+          </div>
+
+          <div class="hero-panel">
+            <h3>本次原型覆盖</h3>
+            <div class="list" style="margin-top: 12px;">
+              <div class="list-item">
+                <div>
+                  <strong>用户决策页</strong>
+                  首页、模型排行、中转站详情
+                </div>
+                <span class="status green">必做</span>
+              </div>
+              <div class="list-item">
+                <div>
+                  <strong>用户操作页</strong>
+                  自助测试、站点提交
+                </div>
+                <span class="status blue">流程页</span>
+              </div>
+              <div class="list-item">
+                <div>
+                  <strong>后台运营页</strong>
+                  总览、站点管理、风险中心
+                </div>
+                <span class="status amber">管理端</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">页面导航</h2>
+            <div class="section-copy">按用户的真实操作顺序组织页面。先看榜单，再看详情，再测试；后台则先看全局，再处理站点和风险。</div>
+          </div>
+        </div>
+
+        <div class="card-grid">
+          <a class="card span-4" href="user-home.html">
+            <span class="chip amber">用户端</span>
+            <h3>01 首页 / 发现页</h3>
+            <p>展示四大主榜入口、企业筛选、高风险提醒、自助测试入口。</p>
+          </a>
+          <a class="card span-4" href="user-ranking.html">
+            <span class="chip amber">用户端</span>
+            <h3>02 模型排行页</h3>
+            <p>按模型查看最便宜、最稳定、综合性价比排行，并带风险和企业筛选。</p>
+          </a>
+          <a class="card span-4" href="user-site-detail.html">
+            <span class="chip amber">用户端</span>
+            <h3>03 中转站详情页</h3>
+            <p>展示价格、稳定性、支持模型、风险证据、邀请链接和支付政策。</p>
+          </a>
+          <a class="card span-4" href="user-self-test.html">
+            <span class="chip teal">操作流</span>
+            <h3>04 自助测试页</h3>
+            <p>输入站点地址、API 密钥、模型名发起测试，查看速度、成功率和风险结论。</p>
+          </a>
+          <a class="card span-4" href="user-submit-site.html">
+            <span class="chip teal">操作流</span>
+            <h3>05 站点提交页</h3>
+            <p>公开提交站点，进入后台审核，不自动上架。</p>
+          </a>
+          <a class="card span-4" href="admin-dashboard.html">
+            <span class="chip red">后台</span>
+            <h3>06 后台总览</h3>
+            <p>看全局指标、待审核站点、测试任务状态和高风险告警。</p>
+          </a>
+          <a class="card span-6" href="admin-sites.html">
+            <span class="chip red">后台</span>
+            <h3>07 中转站管理</h3>
+            <p>维护收录站点、邀请链接、价格抓取状态、测试账号状态和人工复核。</p>
+          </a>
+          <a class="card span-6" href="admin-risk-center.html">
+            <span class="chip red">后台</span>
+            <h3>08 反造假 / 测试中心</h3>
+            <p>查看风险命中、证据明细、测试结果、补测任务和规则配置入口。</p>
+          </a>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="grid-3">
+          <div class="card">
+            <span class="chip teal">原型重点</span>
+            <h3>价格体系怎么表达</h3>
+            <p>所有榜单都区分站点标价、官方价、实际折算价，主排序使用实际折算价。</p>
+          </div>
+          <div class="card">
+            <span class="chip amber">原型重点</span>
+            <h3>稳定性怎么可视化</h3>
+            <p>详情页和排行页都预留 24h / 7d / 30d 统计和趋势图位，不用只看一个成功率数值。</p>
+          </div>
+          <div class="card">
+            <span class="chip red">原型重点</span>
+            <h3>风险怎么解释</h3>
+            <p>不仅给标签，还展示风险分、命中的规则、最近证据，避免“黑箱评分”。</p>
+          </div>
+        </div>
+      </section>
+
+      <div class="prototype-note">
+        <strong>说明：</strong> 这套原型刻意把“反造假”和“自助测试”抬到首页和排行体系里，而不是藏到次级页面。原因是它们不是附加功能，而是这个产品区别于普通导航站的核心价值。
+      </div>
+    </main>
+  </div>
+</body>
+</html>

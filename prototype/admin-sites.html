@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>中转站管理页原型</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-kicker">Admin Side</span>
+        <div class="brand-title">中转站管理<br>Prototype</div>
+        <div class="brand-subtitle">这是后台最常用页面，应该让管理员快速判断一个站是否需要补信息、补抓取、补测试或下线。</div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">后台页面</div>
+        <div class="nav-list">
+          <a class="nav-link" href="admin-dashboard.html"><span>后台总览</span><small>06</small></a>
+          <a class="nav-link active" href="admin-sites.html"><span>中转站管理</span><small>07</small></a>
+          <a class="nav-link" href="admin-risk-center.html"><span>反造假 / 测试中心</span><small>08</small></a>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        站点管理页应当兼顾“收录资料完整度”和“自动化状态完整度”，所以列表字段不能只放站名和域名。
+      </div>
+    </aside>
+
+    <main class="content">
+      <div class="topbar">
+        <div class="crumbs">
+          <span>后台</span>
+          <span>/</span>
+          <span>中转站管理</span>
+        </div>
+        <div class="topbar-actions">
+          <a class="ghost-button" href="#">新增站点</a>
+          <a class="ghost-button" href="#">批量抓取价格</a>
+          <a class="button" href="#">导出当前列表</a>
+        </div>
+      </div>
+
+      <section class="section">
+        <div class="filter-bar">
+          <span class="chip">状态：全部</span>
+          <span class="chip">抓取：异常优先</span>
+          <span class="chip">测试：失败优先</span>
+          <span class="chip">风险：高风险优先</span>
+          <span class="chip">企业属性缺失</span>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="table-card">
+          <div class="section-header">
+            <div>
+              <h3>中转站列表</h3>
+              <p>列表聚焦管理员决策：是否完整、是否异常、是否需要进入编辑或下线流程。</p>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>站点</th>
+                <th>资料完整度</th>
+                <th>价格抓取</th>
+                <th>测试状态</th>
+                <th>风险</th>
+                <th>企业属性</th>
+                <th>动作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="site-name">RelayPort</span><span class="subtle">域名、简介、邀请链接齐全</span></td>
+                <td><span class="status green">完整</span></td>
+                <td><span class="status green">正常</span><span class="subtle">14 分钟前抓取成功</span></td>
+                <td><span class="status green">正常</span><span class="subtle">最近 24h 成功率 98.8%</span></td>
+                <td><span class="status green">14 分</span></td>
+                <td><span class="chip green">开票</span><span class="chip green">退款</span><span class="chip green">文档</span></td>
+                <td><a class="ghost-button" href="#">编辑</a></td>
+              </tr>
+              <tr>
+                <td><span class="site-name">Zen Relay</span><span class="subtle">低价但争议较大</span></td>
+                <td><span class="status amber">待补充</span></td>
+                <td><span class="status green">正常</span><span class="subtle">价格更新 6 分钟前</span></td>
+                <td><span class="status amber">波动</span><span class="subtle">7 天稳定性 88.6%</span></td>
+                <td><span class="status red">82 分</span></td>
+                <td><span class="chip">无开票</span><span class="chip">无退款</span></td>
+                <td><a class="ghost-button" href="admin-risk-center.html">审查</a></td>
+              </tr>
+              <tr>
+                <td><span class="site-name">Aurora Relay</span><span class="subtle">公开提交，待审核</span></td>
+                <td><span class="status amber">初始资料</span></td>
+                <td><span class="status blue">待抓取</span></td>
+                <td><span class="status blue">待测试</span></td>
+                <td><span class="status blue">暂无</span></td>
+                <td><span class="chip">未知</span></td>
+                <td><a class="ghost-button" href="#">审核</a></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>反造假与测试中心原型</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-kicker">Admin Side</span>
+        <div class="brand-title">风险与测试<br>Prototype</div>
+        <div class="brand-subtitle">后台差异化能力集中在这里：规则命中、测试证据、补测动作和规则配置入口。</div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">后台页面</div>
+        <div class="nav-list">
+          <a class="nav-link" href="admin-dashboard.html"><span>后台总览</span><small>06</small></a>
+          <a class="nav-link" href="admin-sites.html"><span>中转站管理</span><small>07</small></a>
+          <a class="nav-link active" href="admin-risk-center.html"><span>反造假 / 测试中心</span><small>08</small></a>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        风险中心不只是报表页，它必须支持管理员做三个动作：看证据、判定误报、手动补测。
+      </div>
+    </aside>
+
+    <main class="content">
+      <div class="topbar">
+        <div class="crumbs">
+          <span>后台</span>
+          <span>/</span>
+          <span>反造假 / 测试中心</span>
+        </div>
+        <div class="topbar-actions">
+          <a class="ghost-button" href="#">手动补测</a>
+          <a class="ghost-button" href="#">标记误报</a>
+          <a class="button" href="#">规则配置</a>
+        </div>
+      </div>
+
+      <section class="section">
+        <div class="metric-grid">
+          <div class="card metric-card">
+            <div class="metric-label">今日测试任务</div>
+            <div class="metric-value">216</div>
+            <div class="metric-trend">成功 189 / 失败 27</div>
+          </div>
+          <div class="card metric-card">
+            <div class="metric-label">今日风险命中</div>
+            <div class="metric-value">34</div>
+            <div class="metric-trend">高风险 11，中风险 23</div>
+          </div>
+          <div class="card metric-card">
+            <div class="metric-label">待人工判断</div>
+            <div class="metric-value">6</div>
+            <div class="metric-trend">可能误报或规则边界问题</div>
+          </div>
+          <div class="card metric-card">
+            <div class="metric-label">补测队列</div>
+            <div class="metric-value">18</div>
+            <div class="metric-trend">高峰时段优先补测</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="card-grid">
+          <div class="table-card span-7">
+            <div class="section-header">
+              <div>
+                <h3>风险命中列表</h3>
+                <p>这里要清楚显示命中了哪条规则、何时发生、证据是什么、下一步该不该人工介入。</p>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>站点 / 模型</th>
+                  <th>规则</th>
+                  <th>风险分</th>
+                  <th>证据摘要</th>
+                  <th>动作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="site-name">Zen Relay / GPT-4.1 mini</span><span class="subtle">22:05 自动测试</span></td>
+                  <td>降级模型冒充高阶模型</td>
+                  <td><span class="status red">82</span></td>
+                  <td>能力特征向量与已知高阶模型偏差过大，输出模式更接近低阶版本。</td>
+                  <td><a class="ghost-button" href="#">看证据</a></td>
+                </tr>
+                <tr>
+                  <td><span class="site-name">BlueGate / Claude 4 Sonnet</span><span class="subtle">21:42 自动测试</span></td>
+                  <td>缓存假响应</td>
+                  <td><span class="status amber">67</span></td>
+                  <td>随机化数学题两次返回完全一致，含不可解释固定格式片段。</td>
+                  <td><a class="ghost-button" href="#">看证据</a></td>
+                </tr>
+                <tr>
+                  <td><span class="site-name">AMS Relay Pool / Gemini 2.5 Pro</span><span class="subtle">21:11 自动测试</span></td>
+                  <td>号池 / 上游异常波动</td>
+                  <td><span class="status amber">58</span></td>
+                  <td>同一模型的路由节点在 3 次测试中异常频繁切换，延迟波动明显。</td>
+                  <td><a class="ghost-button" href="#">看证据</a></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card span-5">
+            <span class="chip red">证据抽屉示意</span>
+            <h3>当前选中证据</h3>
+            <div class="list" style="margin-top: 12px;">
+              <div class="list-item">
+                <div>
+                  <strong>站点</strong>
+                  Zen Relay
+                </div>
+                <span class="status red">82 分</span>
+              </div>
+              <div class="list-item">
+                <div>
+                  <strong>命中规则</strong>
+                  降级模型冒充高阶模型
+                </div>
+              </div>
+              <div class="list-item">
+                <div>
+                  <strong>证据摘要</strong>
+                  结构化推理题、代码题、随机数学题的综合表现与目标模型基线偏差过大。
+                </div>
+              </div>
+              <div class="list-item">
+                <div>
+                  <strong>管理员动作</strong>
+                  标记高风险、加入补测队列、必要时前台展示警告。
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="card-grid">
+          <div class="card span-6">
+            <span class="chip teal">补测队列</span>
+            <h3>最近补测任务</h3>
+            <div class="timeline" style="margin-top: 12px;">
+              <div class="timeline-item">
+                <div class="timeline-time">待执行</div>
+                <div class="timeline-card">
+                  <strong>Zen Relay / GPT-4.1 mini</strong>
+                  安排在晚高峰 23:00、00:00、01:00 连续补测。
+                </div>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-time">已执行</div>
+                <div class="timeline-card">
+                  <strong>BlueGate / Claude 4 Sonnet</strong>
+                  21:50 已补测，缓存规则再次命中，待管理员确认。
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card span-6">
+            <span class="chip amber">规则配置入口</span>
+            <h3>首期配置理念</h3>
+            <p>风险分、规则阈值、补测触发条件不建议硬编码。原型里保留入口，正式实现时应做成可配置面板。</p>
+            <div class="stack" style="margin-top: 14px;">
+              <div class="mini-kpi">
+                <span>规则组</span>
+                <strong>缓存 / 偷换 / 降级 / 伪造 / 虚标</strong>
+              </div>
+              <div class="mini-kpi">
+                <span>阈值</span>
+                <strong>可按模型和站点类型配置</strong>
+              </div>
+              <div class="mini-kpi">
+                <span>处置</span>
+                <strong>前台警示 / 人工审核 / 自动补测</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

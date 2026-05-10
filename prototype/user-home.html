@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>用户端首页原型</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-kicker">User Side</span>
+        <div class="brand-title">CheapAI<br>发现页</div>
+        <div class="brand-subtitle">先筛选，再排行，再进详情和测试。首页负责把决策入口压到最少步骤。</div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">用户端页面</div>
+        <div class="nav-list">
+          <a class="nav-link active" href="user-home.html"><span>首页 / 发现页</span><small>01</small></a>
+          <a class="nav-link" href="user-ranking.html"><span>模型排行页</span><small>02</small></a>
+          <a class="nav-link" href="user-site-detail.html"><span>中转站详情页</span><small>03</small></a>
+          <a class="nav-link" href="user-self-test.html"><span>自助测试页</span><small>04</small></a>
+          <a class="nav-link" href="user-submit-site.html"><span>站点提交页</span><small>05</small></a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">快速跳转</div>
+        <div class="nav-list">
+          <a class="nav-link" href="index.html"><span>原型导航</span><small>Hub</small></a>
+          <a class="nav-link" href="admin-dashboard.html"><span>后台总览</span><small>06</small></a>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        首页核心职责：把“价格排行、稳定性排行、反造假提醒、自助测试”在一屏内暴露出来。
+      </div>
+    </aside>
+
+    <main class="content">
+      <div class="topbar">
+        <div class="crumbs">
+          <span>用户端</span>
+          <span>/</span>
+          <span>首页</span>
+        </div>
+        <div class="topbar-actions">
+          <span class="pill">每小时更新</span>
+          <span class="pill">企业筛选已开启</span>
+          <a class="button" href="user-self-test.html">立即发起测试</a>
+        </div>
+      </div>
+
+      <section class="hero">
+        <div class="hero-grid">
+          <div>
+            <div class="brand-kicker">Find Stable, Cheap, Real</div>
+            <h1 class="hero-title">先找到靠谱站，再决定要不要充值</h1>
+            <p class="hero-copy">
+              首页不是内容门户，而是决策控制台。用户进入后，应当能直接筛选模型、查看四大主榜、看到风险预警，并快速跳到自助测试。
+            </p>
+            <div class="hero-badges">
+              <span class="chip dark">模型：GPT-4.1 mini</span>
+              <span class="chip dark">按实际折算价排序</span>
+              <span class="chip dark">支持开票 / 退款 / 文档筛选</span>
+            </div>
+          </div>
+
+          <div class="hero-panel">
+            <h3>首页默认突出</h3>
+            <div class="list" style="margin-top: 12px;">
+              <div class="list-item">
+                <div>
+                  <strong>模型价格战报</strong>
+                  让个人开发者快速看到便宜站点。
+                </div>
+                <span class="status green">高优先</span>
+              </div>
+              <div class="list-item">
+                <div>
+                  <strong>稳定站点观察</strong>
+                  给企业和高频用户更快的可信判断。
+                </div>
+                <span class="status blue">高优先</span>
+              </div>
+              <div class="list-item">
+                <div>
+                  <strong>高风险提醒</strong>
+                  把疑似造假站点前置暴露。
+                </div>
+                <span class="status red">核心差异</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="filter-bar">
+          <span class="chip amber">模型：GPT-4.1 mini</span>
+          <span class="chip">排序：综合性价比</span>
+          <span class="chip">支持开票</span>
+          <span class="chip">支持退款</span>
+          <span class="chip">有文档</span>
+          <span class="chip">稳定性高</span>
+          <span class="chip teal">展示每小时更新</span>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="metric-grid">
+          <div class="card metric-card">
+            <div class="metric-label">已收录中转站</div>
+            <div class="metric-value">132</div>
+            <div class="metric-trend">本周新增 14 个，待审核 9 个</div>
+          </div>
+          <div class="card metric-card">
+            <div class="metric-label">已覆盖模型</div>
+            <div class="metric-value">47</div>
+            <div class="metric-trend">OpenAI / Claude / Gemini / Qwen / DeepSeek</div>
+          </div>
+          <div class="card metric-card">
+            <div class="metric-label">近 24h 测试次数</div>
+            <div class="metric-value">5,184</div>
+            <div class="metric-trend">成功率均值 96.2%</div>
+          </div>
+          <div class="card metric-card">
+            <div class="metric-label">高风险站点</div>
+            <div class="metric-value">11</div>
+            <div class="metric-trend">7 个疑似降级，4 个疑似缓存返回</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-header">
+          <div>
+            <h2 class="section-title">四大主榜入口</h2>
+            <div class="section-copy">首页要把主榜入口模块化，而不是只给一个大列表。用户带着不同目标来，入口不能混在一起。</div>
+          </div>
+        </div>
+
+        <div class="grid-4">
+          <a class="card" href="user-ranking.html">
+            <span class="chip green">榜单一</span>
+            <h3>最便宜站点</h3>
+            <p>按实际折算价升序展示，兼顾成功率和风险标签。</p>
+          </a>
+          <a class="card" href="user-ranking.html">
+            <span class="chip teal">榜单二</span>
+            <h3>最稳定站点</h3>
+            <p>按 7 天稳定性和 24 小时可用性排序，适合企业和高频场景。</p>
+          </a>
+          <a class="card" href="user-ranking.html">
+            <span class="chip amber">榜单三</span>
+            <h3>综合性价比</h3>
+            <p>价格、可用性、稳定性、速度和风险综合计算。</p>
+          </a>
+          <a class="card" href="user-ranking.html">
+            <span class="chip red">榜单四</span>
+            <h3>整体评分</h3>
+            <p>按中转站视角查看整体能力、覆盖模型、风险均值和运营成熟度。</p>
+          </a>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="card-grid">
+          <div class="table-card span-8">
+            <div class="section-header">
+              <div>
+                <h3>热门模型价格战报</h3>
+                <p>首页默认展示热门模型的小榜单，降低第一次访问的决策门槛。</p>
+              </div>
+              <a class="ghost-button" href="user-ranking.html">查看完整排行</a>
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th>模型</th>
+                  <th>当前最优站点</th>
+                  <th>实际折算价</th>
+                  <th>24h 可用性</th>
+                  <th>风险</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="site-name">GPT-4.1 mini</span><span class="subtle">官方价 $0.40 / $1.60</span></td>
+                  <td>RelayPort</td>
+                  <td>$0.32 / $1.27</td>
+                  <td>98.8%</td>
+                  <td><span class="status green">低风险</span></td>
+                </tr>
+                <tr>
+                  <td><span class="site-name">Claude 4 Sonnet</span><span class="subtle">企业关注高</span></td>
+                  <td>North Proxy</td>
+                  <td>$2.76 / $13.20</td>
+                  <td>97.3%</td>
+                  <td><span class="status amber">中风险</span></td>
+                </tr>
+                <tr>
+                  <td><span class="site-name">Gemini 2.5 Pro</span><span class="subtle">文档完整</span></td>
+                  <td>Ocean Relay</td>
+                  <td>$1.90 / $7.60</td>
+                  <td>95.4%</td>
+                  <td><span class="status green">低风险</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card span-4">
+            <span class="chip red">风险提醒</span>
+            <h3>近 24h 高风险站点</h3>
+            <div class="list" style="margin-top: 12px;">
+              <div class="list-item">
+                <div>
+                  <strong>Zen Relay</strong>
+                  风险分 82，命中“降级模型冒充高阶模型”
+                </div>
+                <span class="status red">严重</span>
+              </div>
+              <div class="list-item">
+                <div>
+                  <strong>BlueGate</strong>
+                  风险分 67，命中“缓存假响应”
+                </div>
+                <span class="status amber">高风险</span>
+              </div>
+              <div class="list-item">
+                <div>
+                  <strong>AMS Relay Pool</strong>
+                  风险分 58，命中“号池波动异常”
+                </div>
+                <span class="status amber">高风险</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="card-grid">
+          <div class="card span-7">
+            <div class="section-header">
+              <div>
+                <h3>稳定性趋势视图</h3>
+                <p>首页不需要展开全部细节，但应给用户足够直观的稳定性趋势预览。</p>
+              </div>
+            </div>
+            <div class="chart-box">
+              <div class="chart-wave"></div>
+            </div>
+          </div>
+
+          <div class="card span-5">
+            <span class="chip teal">操作入口</span>
+            <h3>自助测试</h3>
+            <p>当用户对某个站点不放心时，首页就能直接跳转测试，不强迫先注册或先读长文档。</p>
+            <div class="stack" style="margin-top: 16px;">
+              <div class="mini-kpi">
+                <span>输入项</span>
+                <strong>站点地址 / Key / 模型</strong>
+              </div>
+              <div class="mini-kpi">
+                <span>输出项</span>
+                <strong>可用性 / 速度 / 风险</strong>
+              </div>
+            </div>
+            <div style="margin-top: 18px;">
+              <a class="button" href="user-self-test.html">打开测试页</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="prototype-note">
+        <strong>首页原型判断标准：</strong> 用户第一次打开后，应当在 10 秒内看懂这个站不是普通导航页，而是“能比较、能验证、能提示风险”的中转站决策工具。
+      </div>
+    </main>
+  </div>
+</body>
+</html>

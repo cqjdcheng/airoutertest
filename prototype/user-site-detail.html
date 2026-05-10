@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>中转站详情页原型</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-kicker">User Side</span>
+        <div class="brand-title">站点详情<br>Prototype</div>
+        <div class="brand-subtitle">详情页负责解决“我已经准备充值了，但还需要最后确认哪些信息”的问题。</div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">用户端页面</div>
+        <div class="nav-list">
+          <a class="nav-link" href="user-home.html"><span>首页 / 发现页</span><small>01</small></a>
+          <a class="nav-link" href="user-ranking.html"><span>模型排行页</span><small>02</small></a>
+          <a class="nav-link active" href="user-site-detail.html"><span>中转站详情页</span><small>03</small></a>
+          <a class="nav-link" href="user-self-test.html"><span>自助测试页</span><small>04</small></a>
+          <a class="nav-link" href="user-submit-site.html"><span>站点提交页</span><small>05</small></a>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        详情页不是品牌故事页，而是风险、价格、政策和支持模型的证据页。所有关键判断都应在这里收口。
+      </div>
+    </aside>
+
+    <main class="content">
+      <div class="topbar">
+        <div class="crumbs">
+          <span>用户端</span>
+          <span>/</span>
+          <span>中转站详情</span>
+          <span>/</span>
+          <span>RelayPort</span>
+        </div>
+        <div class="topbar-actions">
+          <span class="pill">最近更新：14 分钟前</span>
+          <a class="ghost-button" href="user-self-test.html">先测再充</a>
+          <a class="button" href="#">携带邀请链接跳转</a>
+        </div>
+      </div>
+
+      <section class="hero">
+        <div class="hero-grid">
+          <div>
+            <div class="brand-kicker">Relay Profile</div>
+            <h1 class="hero-title">RelayPort</h1>
+            <p class="hero-copy">
+              定位偏稳定型的中转站，价格不是最低，但企业属性完整，适合需要开票、文档和长期可用性的用户。详情页在视觉上要突出“可信证据”和“政策透明度”。
+            </p>
+            <div class="hero-badges">
+              <span class="chip dark">风险分 14 / 100</span>
+              <span class="chip dark">24h 可用性 98.8%</span>
+              <span class="chip dark">支持开票 / 退款 / 文档</span>
+            </div>
+          </div>
+          <div class="hero-panel">
+            <h3>站点基础卡片</h3>
+            <div class="list" style="margin-top: 12px;">
+              <div class="list-item">
+                <div>
+                  <strong>站点创建时间</strong>
+                  2024-03-08
+                </div>
+                <span class="status green">存活中</span>
+              </div>
+              <div class="list-item">
+                <div>
+                  <strong>平台首次收录</strong>
+                  2024-08-19
+                </div>
+                <span class="status blue">已监控</span>
+              </div>
+              <div class="list-item">
+                <div>
+                  <strong>支付与政策</strong>
+                  Stripe / USDT / 企业公对公
+                </div>
+                <span class="status amber">透明</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="grid-4">
+          <div class="card metric-card">
+            <div class="metric-label">综合评分</div>
+            <div class="metric-value">89</div>
+            <div class="metric-trend">站点整体评分</div>
+          </div>
+          <div class="card metric-card">
+            <div class="metric-label">7d 稳定性</div>
+            <div class="metric-value">97.9%</div>
+            <div class="metric-trend">波动较小</div>
+          </div>
+          <div class="card metric-card">
+            <div class="metric-label">支持模型数</div>
+            <div class="metric-value">29</div>
+            <div class="metric-trend">OpenAI / Claude / Gemini</div>
+          </div>
+          <div class="card metric-card">
+            <div class="metric-label">充值折算</div>
+            <div class="metric-value">1:1.12</div>
+            <div class="metric-trend">充 100 美元，可用额度 112</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="card-grid">
+          <div class="card span-4">
+            <span class="chip amber">价格</span>
+            <h3>价格体系</h3>
+            <div class="list" style="margin-top: 12px;">
+              <div class="list-item">
+                <div>
+                  <strong>官方价</strong>
+                  GPT-4.1 mini：$0.40 / $1.60
+                </div>
+              </div>
+              <div class="list-item">
+                <div>
+                  <strong>站点标价</strong>
+                  $0.36 / $1.42
+                </div>
+              </div>
+              <div class="list-item">
+                <div>
+                  <strong>实际折算价</strong>
+                  $0.32 / $1.27
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card span-4">
+            <span class="chip teal">政策</span>
+            <h3>企业条件</h3>
+            <div class="list" style="margin-top: 12px;">
+              <div class="list-item"><strong>开票</strong><span class="status green">支持</span></div>
+              <div class="list-item"><strong>退款</strong><span class="status green">支持</span></div>
+              <div class="list-item"><strong>文档</strong><span class="status green">完整</span></div>
+            </div>
+          </div>
+
+          <div class="card span-4">
+            <span class="chip red">风险</span>
+            <h3>反造假摘要</h3>
+            <div class="list" style="margin-top: 12px;">
+              <div class="list-item">
+                <div>
+                  <strong>当前状态</strong>
+                  未命中高风险规则
+                </div>
+                <span class="status green">低风险</span>
+              </div>
+              <div class="list-item">
+                <div>
+                  <strong>最近检测</strong>
+                  12 分钟前
+                </div>
+                <span class="status blue">自动化</span>
+              </div>
+              <div class="list-item">
+                <div>
+                  <strong>最近异常</strong>
+                  7 天前有一次上游延迟波动
+                </div>
+                <span class="status amber">已恢复</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="card-grid">
+          <div class="table-card span-7">
+            <div class="section-header">
+              <div>
+                <h3>支持模型与当前报价</h3>
+                <p>详情页需要把“支持模型 + 价格 + 可用性 + 风险”收在一起，避免用户来回跳页。</p>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>模型</th>
+                  <th>实际折算价</th>
+                  <th>24h 可用性</th>
+                  <th>风险</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>GPT-4.1 mini</td>
+                  <td>$0.32 / $1.27</td>
+                  <td>98.8%</td>
+                  <td><span class="status green">低风险</span></td>
+                </tr>
+                <tr>
+                  <td>Claude 4 Sonnet</td>
+                  <td>$2.76 / $13.20</td>
+                  <td>97.3%</td>
+                  <td><span class="status amber">中风险</span></td>
+                </tr>
+                <tr>
+                  <td>Gemini 2.5 Pro</td>
+                  <td>$1.90 / $7.60</td>
+                  <td>95.4%</td>
+                  <td><span class="status green">低风险</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="card span-5">
+            <span class="chip teal">近期体验</span>
+            <h3>运营备注与体验摘要</h3>
+            <p>
+              近期响应速度稳定，充值折算清晰，企业属性完整。唯一问题是部分高峰时段 Claude 路由偶发波动，因此 Claude 相关模型需要继续观察。
+            </p>
+            <div class="divider"></div>
+            <div class="stack">
+              <div class="mini-kpi">
+                <span>推荐人群</span>
+                <strong>企业 / 高频开发者</strong>
+              </div>
+              <div class="mini-kpi">
+                <span>不适合人群</span>
+                <strong>只看最低价的用户</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="card-grid">
+          <div class="card span-6">
+            <div class="section-header">
+              <div>
+                <h3>稳定性趋势</h3>
+                <p>原型需要为 24h / 7d / 30d 预留视图切换和趋势图位。</p>
+              </div>
+              <div class="chip-row">
+                <span class="chip amber">24h</span>
+                <span class="chip">7d</span>
+                <span class="chip">30d</span>
+              </div>
+            </div>
+            <div class="chart-box">
+              <div class="chart-wave"></div>
+            </div>
+          </div>
+
+          <div class="card span-6">
+            <div class="section-header">
+              <div>
+                <h3>最近测试记录</h3>
+                <p>详情页应允许用户看到近期实测而不是只有汇总指标。</p>
+              </div>
+            </div>
+            <div class="timeline">
+              <div class="timeline-item">
+                <div class="timeline-time">22:00</div>
+                <div class="timeline-card">
+                  <strong>GPT-4.1 mini</strong>
+                  成功，首 token 0.79s，完整响应 6.1s，风险无异常。
+                </div>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-time">21:00</div>
+                <div class="timeline-card">
+                  <strong>Claude 4 Sonnet</strong>
+                  成功，首 token 1.12s，完整响应 8.9s，检测到轻微上游切换。
+                </div>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-time">20:00</div>
+                <div class="timeline-card">
+                  <strong>Gemini 2.5 Pro</strong>
+                  成功，首 token 0.68s，完整响应 5.2s，无风险命中。
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="table-card">
+          <div class="section-header">
+            <div>
+              <h3>风险证据记录</h3>
+              <p>“低风险”也要能点开看证据。否则用户无法判断这个评分是否可信。</p>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>时间</th>
+                <th>规则</th>
+                <th>证据摘要</th>
+                <th>处置</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>2026-05-10 20:15</td>
+                <td>上游切换波动</td>
+                <td>Claude 路由从 `origin-a` 切至 `origin-b`，延迟瞬时升高，但输出一致。</td>
+                <td><span class="chip green">观察中</span></td>
+              </tr>
+              <tr>
+                <td>2026-05-03 18:40</td>
+                <td>缓存响应排查</td>
+                <td>数学题随机种子变更后返回值正常变化，未命中缓存假响应规则。</td>
+                <td><span class="chip teal">通过</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
