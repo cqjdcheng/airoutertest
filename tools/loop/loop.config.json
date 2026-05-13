@@ -1,0 +1,22 @@
+{
+  "root": "D:/project/CheapAi",
+  "apiUrl": "http://127.0.0.1:5050",
+  "publicUrl": "http://127.0.0.1:3000",
+  "adminUrl": "http://127.0.0.1:8000",
+  "mysql": {
+    "host": "127.0.0.1",
+    "port": 3334,
+    "database": "cheapai",
+    "user": "root",
+    "password": "123456"
+  },
+  "redis": {
+    "connectionString": "127.0.0.1:6379"
+  },
+  "seed": {
+    "adminUsername": "admin",
+    "adminPassword": "ChangeMe123!",
+    "siteSlug": "relay-port",
+    "modelSlug": "gpt-4-1-mini"
+  }
+}

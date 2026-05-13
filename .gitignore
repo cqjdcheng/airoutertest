@@ -1,0 +1,38 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.vs/
+
+# .NET
+bin/
+obj/
+TestResults/
+*.user
+*.suo
+*.rsuser
+
+# Node / frontend
+node_modules/
+.next/
+dist/
+build/
+.turbo/
+.cache/
+*.tsbuildinfo
+.umi/
+.umi-production/
+
+# Runtime logs and local automation state
+*.log
+.api-run*.log
+.admin-run*.log
+.playwright-mcp/
+.serena/
+artifacts/
+
+# Environment
+.env
+.env.*
+!.env.example

@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/backend/">
+    <Project Path="src/backend/CheapAI.Api/CheapAI.Api.csproj" />
+    <Project Path="src/backend/CheapAI.Application/CheapAI.Application.csproj" />
+    <Project Path="src/backend/CheapAI.BackgroundJobs/CheapAI.BackgroundJobs.csproj" />
+    <Project Path="src/backend/CheapAI.Domain/CheapAI.Domain.csproj" />
+    <Project Path="src/backend/CheapAI.Infrastructure/CheapAI.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/backend/test/">
+    <Project Path="src/backend/test/CheapAI.Api.Tests/CheapAI.Api.Tests.csproj" />
+    <Project Path="src/backend/test/CheapAI.Application.Tests/CheapAI.Application.Tests.csproj" />
+  </Folder>
+</Solution>
