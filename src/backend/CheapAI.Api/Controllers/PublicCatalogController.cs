@@ -11,9 +11,16 @@ namespace CheapAI.Api.Controllers;
 public sealed class PublicCatalogController(PublicCatalogService publicCatalogService) : ControllerBase
 {
     [HttpGet("tests/latest")]
-    public async Task<IActionResult> GetLatestTests([FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> GetLatestTests([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? testType = null, CancellationToken cancellationToken = default)
     {
-        var result = await publicCatalogService.GetLatestTestsAsync(page, pageSize, cancellationToken);
+        var result = await publicCatalogService.GetLatestTestsAsync(page, pageSize, testType, cancellationToken);
+        return Ok(ApiResponseFactory.Success(HttpContext, result));
+    }
+
+    [HttpGet("tests/{id:long}")]
+    public async Task<IActionResult> GetTestDetail(ulong id, CancellationToken cancellationToken = default)
+    {
+        var result = await publicCatalogService.GetTestDetailAsync(id, cancellationToken);
         return Ok(ApiResponseFactory.Success(HttpContext, result));
     }
 

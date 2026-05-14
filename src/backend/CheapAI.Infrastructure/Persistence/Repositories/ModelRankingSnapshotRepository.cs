@@ -20,14 +20,17 @@ public sealed class ModelRankingSnapshotRepository(ISqlSugarClient db, IRelaySit
         var topPriceCards = await QueryCardsAsync("price", "7d", 5, cancellationToken);
         var topStabilityCards = await QueryCardsAsync("stability", "7d", 5, cancellationToken);
         var riskHighlights = await QueryRiskHighlightsAsync(5, cancellationToken);
+        var popularModels = await QueryPopularModelsAsync(5, cancellationToken);
 
         return new HomeOverviewResponse
         {
-            FeaturedModel = topPriceCards.FirstOrDefault()?.ModelSlug ?? topStabilityCards.FirstOrDefault()?.ModelSlug,
+            FeaturedModel = popularModels.FirstOrDefault()?.ModelSlug ?? topPriceCards.FirstOrDefault()?.ModelSlug ?? topStabilityCards.FirstOrDefault()?.ModelSlug,
+            PopularModels = popularModels,
             Stats = new HomeOverviewStatsResponse
             {
                 SiteCount = await relaySiteRepository.CountActiveAsync(cancellationToken),
                 ModelCount = await modelRepository.CountActiveAsync(cancellationToken),
+                TestCount = await db.Queryable<TestRecordEntity>().CountAsync(cancellationToken),
                 LatestTestAt = latestSnapshotAt == default ? null : latestSnapshotAt
             },
             TopPriceCards = topPriceCards,
@@ -170,6 +173,38 @@ public sealed class ModelRankingSnapshotRepository(ISqlSugarClient db, IRelaySit
             .ToListAsync(cancellationToken);
 
         return items;
+    }
+
+    private async Task<IReadOnlyList<HomePopularModelResponse>> QueryPopularModelsAsync(int limit, CancellationToken cancellationToken)
+    {
+        var items = await db.Queryable<AiModelEntity>()
+            .Where(x => x.DeletedAt == null && x.Status == "active" && x.IsHot)
+            .OrderBy(x => x.SortOrder, OrderByType.Asc)
+            .OrderBy(x => x.Id, OrderByType.Desc)
+            .Select(x => new HomePopularModelResponse
+            {
+                ModelSlug = x.Slug,
+                ModelName = x.DisplayName
+            })
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+
+        if (items.Count > 0)
+        {
+            return items;
+        }
+
+        return await db.Queryable<AiModelEntity>()
+            .Where(x => x.DeletedAt == null && x.Status == "active")
+            .OrderBy(x => x.SortOrder, OrderByType.Asc)
+            .OrderBy(x => x.Id, OrderByType.Desc)
+            .Select(x => new HomePopularModelResponse
+            {
+                ModelSlug = x.Slug,
+                ModelName = x.DisplayName
+            })
+            .Take(limit)
+            .ToListAsync(cancellationToken);
     }
 
     private async Task<IReadOnlyList<RiskHighlightResponse>> QueryRiskHighlightsAsync(int limit, CancellationToken cancellationToken)

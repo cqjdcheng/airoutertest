@@ -34,7 +34,7 @@ export default function LoginPage() {
                 currentAdmin: result.admin
               });
               message.success(`欢迎回来，${result.admin.displayName}`);
-              history.push("/dashboard");
+              history.replace("/dashboard");
               return true;
             } catch (error) {
               message.error((error as Error).message);

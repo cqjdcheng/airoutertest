@@ -42,51 +42,133 @@ public sealed class ModelRepository(ISqlSugarClient db) : IModelRepository
 
     public async Task<ModelDetailResponse?> GetByIdAsync(ulong id, CancellationToken cancellationToken = default)
     {
-        var entity = await db.Queryable<AiModelEntity>()
-            .FirstAsync(x => x.Id == id && x.DeletedAt == null, cancellationToken);
-
-        return entity is null ? null : MapDetail(entity);
+        return await db.Queryable<AiModelEntity, ModelProviderEntity>(
+                (model, provider) => new JoinQueryInfos(JoinType.Left, model.ProviderId == provider.Id))
+            .Where((model, provider) => model.Id == id && model.DeletedAt == null)
+            .Select((model, provider) => new ModelDetailResponse
+            {
+                Id = model.Id,
+                ProviderId = model.ProviderId,
+                ProviderName = provider.Name,
+                Slug = model.Slug,
+                Vendor = model.Vendor,
+                OfficialModelId = model.OfficialModelId,
+                DisplayName = model.DisplayName,
+                Description = model.Description,
+                Status = model.Status,
+                IsHot = model.IsHot,
+                SortOrder = model.SortOrder,
+                OfficialInputPriceUsd = model.OfficialInputPriceUsd,
+                OfficialOutputPriceUsd = model.OfficialOutputPriceUsd,
+                CapabilityScore = model.CapabilityScore,
+                CapabilitySource = model.CapabilitySource,
+                CapabilityUpdatedAtUtc = model.CapabilityUpdatedAt,
+                CreatedAtUtc = model.CreatedAt,
+                UpdatedAtUtc = model.UpdatedAt
+            })
+            .FirstAsync(cancellationToken);
     }
 
     public async Task<ModelListItemResponse?> GetBySlugAsync(string slug, CancellationToken cancellationToken = default)
     {
-        var entity = await db.Queryable<AiModelEntity>()
-            .FirstAsync(x => x.Slug == slug && x.DeletedAt == null, cancellationToken);
+        return await db.Queryable<AiModelEntity, ModelProviderEntity>(
+                (model, provider) => new JoinQueryInfos(JoinType.Left, model.ProviderId == provider.Id))
+            .Where((model, provider) => model.Slug == slug && model.DeletedAt == null)
+            .Select((model, provider) => new ModelListItemResponse
+            {
+                Id = model.Id,
+                ProviderId = model.ProviderId,
+                ProviderName = provider.Name,
+                Slug = model.Slug,
+                Vendor = model.Vendor,
+                OfficialModelId = model.OfficialModelId,
+                DisplayName = model.DisplayName,
+                Status = model.Status,
+                IsHot = model.IsHot,
+                SortOrder = model.SortOrder,
+                OfficialInputPriceUsd = model.OfficialInputPriceUsd,
+                OfficialOutputPriceUsd = model.OfficialOutputPriceUsd,
+                CapabilityScore = model.CapabilityScore,
+                CapabilitySource = model.CapabilitySource,
+                CapabilityUpdatedAtUtc = model.CapabilityUpdatedAt
+            })
+            .FirstAsync(cancellationToken);
+    }
 
-        return entity is null ? null : MapListItem(entity);
+    public async Task<ModelDetailResponse?> GetByVendorAndOfficialModelIdAsync(string vendor, string officialModelId, CancellationToken cancellationToken = default)
+    {
+        return await db.Queryable<AiModelEntity, ModelProviderEntity>(
+                (model, provider) => new JoinQueryInfos(JoinType.Left, model.ProviderId == provider.Id))
+            .Where((model, provider) =>
+                model.Vendor == vendor &&
+                model.OfficialModelId == officialModelId &&
+                model.DeletedAt == null)
+            .Select((model, provider) => new ModelDetailResponse
+            {
+                Id = model.Id,
+                ProviderId = model.ProviderId,
+                ProviderName = provider.Name,
+                Slug = model.Slug,
+                Vendor = model.Vendor,
+                OfficialModelId = model.OfficialModelId,
+                DisplayName = model.DisplayName,
+                Description = model.Description,
+                Status = model.Status,
+                IsHot = model.IsHot,
+                SortOrder = model.SortOrder,
+                OfficialInputPriceUsd = model.OfficialInputPriceUsd,
+                OfficialOutputPriceUsd = model.OfficialOutputPriceUsd,
+                CapabilityScore = model.CapabilityScore,
+                CapabilitySource = model.CapabilitySource,
+                CapabilityUpdatedAtUtc = model.CapabilityUpdatedAt,
+                CreatedAtUtc = model.CreatedAt,
+                UpdatedAtUtc = model.UpdatedAt
+            })
+            .FirstAsync(cancellationToken);
     }
 
     public async Task<PagedResult<ModelListItemResponse>> GetPagedAsync(ModelListQuery query, CancellationToken cancellationToken = default)
     {
-        var sqlQuery = db.Queryable<AiModelEntity>()
-            .Where(x => x.DeletedAt == null);
+        var sqlQuery = db.Queryable<AiModelEntity, ModelProviderEntity>(
+                (model, provider) => new JoinQueryInfos(JoinType.Left, model.ProviderId == provider.Id))
+            .Where((model, provider) => model.DeletedAt == null);
 
         if (!string.IsNullOrWhiteSpace(query.Keyword))
         {
-            sqlQuery = sqlQuery.Where(x =>
-                x.Slug.Contains(query.Keyword!) ||
-                x.DisplayName.Contains(query.Keyword!) ||
-                x.OfficialModelId.Contains(query.Keyword!));
+            sqlQuery = sqlQuery.Where((model, provider) =>
+                model.Slug.Contains(query.Keyword!) ||
+                model.DisplayName.Contains(query.Keyword!) ||
+                model.OfficialModelId.Contains(query.Keyword!) ||
+                model.Vendor.Contains(query.Keyword!) ||
+                provider.Name.Contains(query.Keyword!));
         }
 
         if (!string.IsNullOrWhiteSpace(query.Status))
         {
-            sqlQuery = sqlQuery.Where(x => x.Status == query.Status);
+            sqlQuery = sqlQuery.Where((model, provider) => model.Status == query.Status);
         }
 
         RefAsync<int> total = 0;
         var items = await sqlQuery
-            .OrderBy(x => x.Id, OrderByType.Desc)
-            .Select(x => new ModelListItemResponse
+            .OrderBy((model, provider) => model.SortOrder, OrderByType.Asc)
+            .OrderBy((model, provider) => model.Id, OrderByType.Desc)
+            .Select((model, provider) => new ModelListItemResponse
             {
-                Id = x.Id,
-                Slug = x.Slug,
-                Vendor = x.Vendor,
-                OfficialModelId = x.OfficialModelId,
-                DisplayName = x.DisplayName,
-                Status = x.Status,
-                OfficialInputPriceUsd = x.OfficialInputPriceUsd,
-                OfficialOutputPriceUsd = x.OfficialOutputPriceUsd
+                Id = model.Id,
+                ProviderId = model.ProviderId,
+                ProviderName = provider.Name,
+                Slug = model.Slug,
+                Vendor = model.Vendor,
+                OfficialModelId = model.OfficialModelId,
+                DisplayName = model.DisplayName,
+                Status = model.Status,
+                IsHot = model.IsHot,
+                SortOrder = model.SortOrder,
+                OfficialInputPriceUsd = model.OfficialInputPriceUsd,
+                OfficialOutputPriceUsd = model.OfficialOutputPriceUsd,
+                CapabilityScore = model.CapabilityScore,
+                CapabilitySource = model.CapabilitySource,
+                CapabilityUpdatedAtUtc = model.CapabilityUpdatedAt
             })
             .ToPageListAsync(query.Page, query.PageSize, total, cancellationToken);
 
@@ -103,14 +185,20 @@ public sealed class ModelRepository(ISqlSugarClient db) : IModelRepository
     {
         var entity = new AiModelEntity
         {
+            ProviderId = request.ProviderId,
             Slug = request.Slug,
             Vendor = request.Vendor,
             OfficialModelId = request.OfficialModelId,
             DisplayName = request.DisplayName,
             Description = request.Description,
             Status = request.Status,
+            IsHot = request.IsHot,
+            SortOrder = request.SortOrder,
             OfficialInputPriceUsd = request.OfficialInputPriceUsd,
             OfficialOutputPriceUsd = request.OfficialOutputPriceUsd,
+            CapabilityScore = request.CapabilityScore,
+            CapabilitySource = request.CapabilitySource,
+            CapabilityUpdatedAt = request.CapabilityScore.HasValue ? DateTime.UtcNow : null,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -123,14 +211,20 @@ public sealed class ModelRepository(ISqlSugarClient db) : IModelRepository
         return db.Updateable<AiModelEntity>()
             .SetColumns(x => new AiModelEntity
             {
+                ProviderId = request.ProviderId,
                 Slug = request.Slug,
                 Vendor = request.Vendor,
                 OfficialModelId = request.OfficialModelId,
                 DisplayName = request.DisplayName,
                 Description = request.Description,
                 Status = request.Status,
+                IsHot = request.IsHot,
+                SortOrder = request.SortOrder,
                 OfficialInputPriceUsd = request.OfficialInputPriceUsd,
                 OfficialOutputPriceUsd = request.OfficialOutputPriceUsd,
+                CapabilityScore = request.CapabilityScore,
+                CapabilitySource = request.CapabilitySource,
+                CapabilityUpdatedAt = request.CapabilityScore.HasValue ? DateTime.UtcNow : null,
                 UpdatedAt = DateTime.UtcNow
             })
             .Where(x => x.Id == id && x.DeletedAt == null)
@@ -154,13 +248,19 @@ public sealed class ModelRepository(ISqlSugarClient db) : IModelRepository
         return new ModelListItemResponse
         {
             Id = entity.Id,
+            ProviderId = entity.ProviderId,
             Slug = entity.Slug,
             Vendor = entity.Vendor,
             OfficialModelId = entity.OfficialModelId,
             DisplayName = entity.DisplayName,
             Status = entity.Status,
+            IsHot = entity.IsHot,
+            SortOrder = entity.SortOrder,
             OfficialInputPriceUsd = entity.OfficialInputPriceUsd,
-            OfficialOutputPriceUsd = entity.OfficialOutputPriceUsd
+            OfficialOutputPriceUsd = entity.OfficialOutputPriceUsd,
+            CapabilityScore = entity.CapabilityScore,
+            CapabilitySource = entity.CapabilitySource,
+            CapabilityUpdatedAtUtc = entity.CapabilityUpdatedAt
         };
     }
 
@@ -169,14 +269,20 @@ public sealed class ModelRepository(ISqlSugarClient db) : IModelRepository
         return new ModelDetailResponse
         {
             Id = entity.Id,
+            ProviderId = entity.ProviderId,
             Slug = entity.Slug,
             Vendor = entity.Vendor,
             OfficialModelId = entity.OfficialModelId,
             DisplayName = entity.DisplayName,
             Description = entity.Description,
             Status = entity.Status,
+            IsHot = entity.IsHot,
+            SortOrder = entity.SortOrder,
             OfficialInputPriceUsd = entity.OfficialInputPriceUsd,
             OfficialOutputPriceUsd = entity.OfficialOutputPriceUsd,
+            CapabilityScore = entity.CapabilityScore,
+            CapabilitySource = entity.CapabilitySource,
+            CapabilityUpdatedAtUtc = entity.CapabilityUpdatedAt,
             CreatedAtUtc = entity.CreatedAt,
             UpdatedAtUtc = entity.UpdatedAt
         };

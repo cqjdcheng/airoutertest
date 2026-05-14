@@ -31,4 +31,8 @@ public sealed class RelaySiteDetailResponse
     public DateTime CreatedAtUtc { get; init; }
 
     public DateTime UpdatedAtUtc { get; init; }
+
+    public IReadOnlyList<RelaySiteOfferResponse> Offers { get; init; } = [];
+
+    public IReadOnlyList<RelaySiteTestRecordResponse> RecentTests { get; init; } = [];
 }

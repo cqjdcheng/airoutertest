@@ -2,6 +2,12 @@ namespace CheapAI.Application.Models;
 
 public class CreateModelRequest
 {
+    public ulong? ProviderId { get; init; }
+
+    public string? ProviderSlug { get; init; }
+
+    public string? ProviderName { get; init; }
+
     public string Slug { get; init; } = string.Empty;
 
     public string Vendor { get; init; } = string.Empty;
@@ -14,7 +20,15 @@ public class CreateModelRequest
 
     public string Status { get; init; } = ModelStatusValue.Active;
 
+    public bool IsHot { get; init; }
+
+    public int SortOrder { get; init; } = 1000;
+
     public decimal? OfficialInputPriceUsd { get; init; }
 
     public decimal? OfficialOutputPriceUsd { get; init; }
+
+    public decimal? CapabilityScore { get; init; }
+
+    public string? CapabilitySource { get; init; }
 }

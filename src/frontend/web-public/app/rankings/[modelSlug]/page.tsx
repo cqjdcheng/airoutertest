@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BackLink, PublicHeader } from "@/app/components/PublicHeader";
+import { PublicPageHero } from "@/app/components/PublicPageHero";
 import { getJson, type PublicEnvelope } from "@/lib/api";
 import { formatDateTime, money, percent, riskLabel, riskTone, score } from "@/lib/format";
 
@@ -49,71 +50,58 @@ export default async function ModelRankingPage({ params }: { params: Promise<{ m
   const lowRiskCount = items.filter((item) => item.riskLevel === "low").length;
 
   return (
-    <main className="min-h-screen">
+    <main className="public-shell">
       <PublicHeader featuredModel={modelSlug} />
-      <section className="public-container py-10 lg:py-14">
-        <BackLink />
-        <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
-          <div>
-            <p className="eyebrow">Model Ranking</p>
-            <h1 className="page-title mt-4">{payload?.model.displayName ?? modelSlug} 价格排行</h1>
-            <p className="body-lead mt-5 max-w-3xl">
-              当前榜单按实际折算价展示，同时保留稳定性、速度、风险和企业属性，避免只按低价排序。
-            </p>
-          </div>
-          <aside className="panel-card p-5">
-            <div className="text-sm text-[var(--text-secondary)]">快照时间</div>
-            <div className="mt-2 text-lg font-semibold">{formatDateTime(payload?.snapshotAt)}</div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <span className="status-pill" data-tone="neutral">
-                {payload?.window ?? "7d"}
-              </span>
-              <span className="status-pill" data-tone="success">
-                平台定时测试
-              </span>
-            </div>
-          </aside>
-        </div>
 
-        <section className="mt-8 grid gap-4 md:grid-cols-4">
-          <div className="panel-card p-5">
-            <div className="text-sm text-[var(--text-secondary)]">最低折算价</div>
-            <div className="mt-2 text-2xl font-semibold tracking-tight">
-              {bestItem ? `${money(bestItem.effectiveInputPriceUsd)} / ${money(bestItem.effectiveOutputPriceUsd)}` : "-"}
-            </div>
-            <p className="mt-2 text-xs text-[var(--text-tertiary)]">按输入价 + 输出价排序</p>
-          </div>
-          <div className="panel-card p-5">
-            <div className="text-sm text-[var(--text-secondary)]">可选站点</div>
-            <div className="mt-2 text-3xl font-semibold tracking-tight">{payload?.result.total ?? 0}</div>
-            <p className="mt-2 text-xs text-[var(--text-tertiary)]">来自排行快照，不实时拼装</p>
-          </div>
-          <div className="panel-card p-5">
-            <div className="text-sm text-[var(--text-secondary)]">低风险</div>
-            <div className="mt-2 text-3xl font-semibold tracking-tight">{lowRiskCount}</div>
-            <p className="mt-2 text-xs text-[var(--text-tertiary)]">风险分规则累加并封顶 100</p>
-          </div>
-          <div className="panel-card p-5">
-            <div className="text-sm text-[var(--text-secondary)]">企业友好</div>
-            <div className="mt-2 text-3xl font-semibold tracking-tight">{enterpriseReadyCount}</div>
-            <p className="mt-2 text-xs text-[var(--text-tertiary)]">同时支持开票、退款、文档</p>
-          </div>
+      <section className="public-container public-main">
+        <BackLink />
+        <PublicPageHero
+          eyebrow="Model Ranking"
+          title={`${payload?.model.displayName ?? modelSlug} 价格排行`}
+          description="当前榜单按实际折算价展示，同时保留稳定性、速度、风险和企业属性，避免只按低价排序。"
+          aside={
+            <>
+              <div className="metric-card">
+                <span>快照时间</span>
+                <strong>{formatDateTime(payload?.snapshotAt)}</strong>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="status-pill" data-tone="neutral">
+                  {payload?.window ?? "7d"}
+                </span>
+                <span className="status-pill" data-tone="success">
+                  平台定时测试
+                </span>
+              </div>
+            </>
+          }
+        />
+
+        <section className="metric-overview">
+          <MetricCard
+            label="最低折算价"
+            value={bestItem ? `${money(bestItem.effectiveInputPriceUsd)} / ${money(bestItem.effectiveOutputPriceUsd)}` : "-"}
+            hint="按输入价 + 输出价排序"
+          />
+          <MetricCard label="可选站点" value={payload?.result.total ?? 0} hint="来自排行快照，不实时拼装" />
+          <MetricCard label="低风险" value={lowRiskCount} hint="风险分规则累加并封顶 100" />
+          <MetricCard label="企业友好" value={enterpriseReadyCount} hint="同时支持开票、退款、文档" />
         </section>
 
-        <section className="mt-6 grid gap-4 lg:grid-cols-3">
+        <section className="insight-grid">
           {[
             ["个人开发者", "优先看实际折算价和低风险标签，避免只被站点标价吸引。"],
             ["企业采购", "优先筛选开票、退款、文档和稳定性，价格只作为次级条件。"],
             ["极致低价", "低价入口需要同时看风险分和最近测试时间，防止缓存假响应或模型降级。"]
           ].map(([title, description]) => (
-            <div className="panel-card p-5" key={title}>
-              <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
-              <p className="mt-3 text-sm leading-7 text-[var(--text-secondary)]">{description}</p>
-            </div>
+            <article className="insight-card" key={title}>
+              <h2>{title}</h2>
+              <p>{description}</p>
+            </article>
           ))}
         </section>
 
-        <section className="data-table mt-8">
+        <section className="data-table">
           <div className="hidden grid-cols-12 border-b border-[var(--line)] px-5 py-3 text-xs font-semibold uppercase tracking-wide text-[var(--text-tertiary)] md:grid">
             <div className="col-span-3">站点</div>
             <div className="col-span-2">价格 USD</div>
@@ -129,7 +117,7 @@ export default async function ModelRankingPage({ params }: { params: Promise<{ m
                 <article key={`${item.siteSlug}-${item.riskLevel}-${index}`} className="grid gap-4 px-5 py-5 text-sm md:grid-cols-12 md:items-center">
                   <div className="md:col-span-3">
                     <div className="flex items-center gap-3">
-                      <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--surface-muted)] text-xs font-semibold text-[var(--text-secondary)]">
+                      <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--surface-soft)] text-xs font-semibold text-[var(--text-secondary)]">
                         #{index + 1}
                       </span>
                       <div>
@@ -178,5 +166,15 @@ export default async function ModelRankingPage({ params }: { params: Promise<{ m
         </section>
       </section>
     </main>
+  );
+}
+
+function MetricCard({ label, value, hint }: { label: string; value: string | number; hint: string }) {
+  return (
+    <div className="metric-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <p className="mt-2 text-xs text-[var(--text-tertiary)]">{hint}</p>
+    </div>
   );
 }

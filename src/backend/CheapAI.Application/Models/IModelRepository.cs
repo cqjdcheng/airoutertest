@@ -10,6 +10,8 @@ public interface IModelRepository
 
     Task<ModelListItemResponse?> GetBySlugAsync(string slug, CancellationToken cancellationToken = default);
 
+    Task<ModelDetailResponse?> GetByVendorAndOfficialModelIdAsync(string vendor, string officialModelId, CancellationToken cancellationToken = default);
+
     Task<bool> ExistsByVendorAndOfficialModelIdAsync(string vendor, string officialModelId, ulong? excludingId = null, CancellationToken cancellationToken = default);
 
     Task<bool> ExistsBySlugAsync(string slug, ulong? excludingId = null, CancellationToken cancellationToken = default);

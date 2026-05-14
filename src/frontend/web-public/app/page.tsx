@@ -8,91 +8,85 @@ export const dynamic = "force-dynamic";
 
 type HomeOverview = {
   featuredModel?: string | null;
+  popularModels?: Array<{
+    modelSlug: string;
+    modelName: string;
+  }>;
   stats: {
     siteCount: number;
     modelCount: number;
+    testCount: number;
     latestTestAt?: string | null;
   };
 };
 
-const popularModelSlugs = ["gpt-5.5", "gpt-5.4", "claude-code-4.7", "claude-code-4.6", "gemini-3.1-pro"];
-
 export default async function HomePage() {
-  const [overviewResponse, cheapestResponse] = await Promise.all([
-    getJson<PublicEnvelope<HomeOverview>>("/api/v1/public/home/overview"),
-    getJson<PublicEnvelope<CheapestRankingGroup[]>>(`/api/v1/public/rankings/cheapest?modelSlugs=${popularModelSlugs.join(",")}&limit=5`)
-  ]);
+  const overviewResponse = await getJson<PublicEnvelope<HomeOverview>>("/api/v1/public/home/overview");
 
   const overview = overviewResponse?.data;
+  const popularModelSlugs = (overview?.popularModels ?? []).map((model) => model.modelSlug).filter(Boolean);
+  const resolvedPopularModelSlugs = popularModelSlugs.length ? popularModelSlugs : ["gpt-4-1-mini"];
+  const cheapestResponse = await getJson<PublicEnvelope<CheapestRankingGroup[]>>(
+    `/api/v1/public/rankings/cheapest?modelSlugs=${resolvedPopularModelSlugs.join(",")}&limit=5`
+  );
   const rawCheapestGroups = cheapestResponse?.data ?? [];
-  const cheapestGroups = popularModelSlugs.map(
+  const cheapestGroups = resolvedPopularModelSlugs.map(
     (modelSlug) => rawCheapestGroups.find((group) => group.modelSlug === modelSlug) ?? { modelSlug, items: [] }
   );
   const featuredModel =
-    overview?.featuredModel && popularModelSlugs.includes(overview.featuredModel)
+    overview?.featuredModel && resolvedPopularModelSlugs.includes(overview.featuredModel)
       ? overview.featuredModel
-      : "gpt-5.5";
+      : resolvedPopularModelSlugs[0];
 
   return (
-    <main className="min-h-screen">
+    <main className="public-shell">
       <PublicHeader featuredModel={featuredModel} />
 
-      <section className="public-container py-10 lg:py-14">
-        <HomeTestWorkbench
-          stats={{
-            siteCount: overview?.stats.siteCount ?? 0,
-            modelCount: overview?.stats.modelCount ?? 0,
-            latestTestAt: overview?.stats.latestTestAt
-          }}
-        />
+      <section className="public-container public-main">
+        <section className="home-hero home-hero--focused">
+          <div className="home-hero__content">
+            <p className="eyebrow">Relay Intelligence</p>
+            <h1 className="display-title mt-4">挑选靠谱的中转站</h1>
+            <p className="body-lead mt-5 max-w-3xl">
+              任何中转站存在跑路风险，为了您的财产安全, 建议先小额试用, 请勿囤积、贪图大额优惠
+            </p>
+          </div>
 
-        <section className="mt-8">
-          <HomeCheapestTabs groups={cheapestGroups} />
+          <div className="home-hero__aside">
+            <div className="hero-stats">
+              <div className="metric-card metric-card--primary">
+                <span>测试次数</span>
+                <strong>{(overview?.stats.testCount ?? 0).toLocaleString("zh-CN")}</strong>
+                <small>平台样本与自测记录持续更新</small>
+              </div>
+              <div className="metric-card">
+                <span>收录站点</span>
+                <strong>{overview?.stats.siteCount ?? 0}</strong>
+              </div>
+              <div className="metric-card">
+                <span>覆盖模型</span>
+                <strong>{overview?.stats.modelCount ?? 0}</strong>
+              </div>         
+            </div>
+          </div>
         </section>
 
-        <section className="mt-8 grid gap-5 lg:grid-cols-3">
-          <KnowledgeCard
-            title="中转站科普"
-            description="AI 中转站本质是兼容 OpenAI 协议的 API 转发服务，常见差异包括上游来源、充值比例、模型覆盖、稳定性、退款和发票能力。"
-            href="/sites"
-            action="查看中转站大全"
-          />
-          <KnowledgeCard
-            title="模型科普"
-            description="同一个模型在不同中转站可能存在价格、上游、限速和降级风险差异。模型大全按模型维度聚合最便宜站点和稳定性摘要。"
-            href="/models"
-            action="查看模型大全"
-          />
-          <KnowledgeCard
-            title="测试模型原理"
-            description="平台测试会记录连通性、首 token、完整响应、错误类型和风险证据。自助测试不进入公共排行，公共排行只使用平台定时测试。"
-            href="/tests"
-            action="查看测试方案"
-          />
+        <div id="self-test">
+          <HomeTestWorkbench popularModels={overview?.popularModels ?? []} />
+        </div>
+
+        <section className="section-heading">
+          <div>
+            <p className="eyebrow">Market Snapshot</p>
+            <h2 className="section-title">主流模型低价排行</h2>
+            <p className="section-copy">只保留核心排行入口，详细决策留到站点页和测试页。</p>
+          </div>
+          <Link href="/models" className="text-button">
+            查看全部模型
+          </Link>
         </section>
+        <HomeCheapestTabs groups={cheapestGroups} />
       </section>
     </main>
-  );
-}
-
-function KnowledgeCard({
-  title,
-  description,
-  href,
-  action
-}: {
-  title: string;
-  description: string;
-  href: string;
-  action: string;
-}) {
-  return (
-    <article className="panel-card p-6">
-      <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
-      <p className="mt-4 text-sm leading-7 text-[var(--text-secondary)]">{description}</p>
-      <Link href={href} className="text-button mt-5">
-        {action}
-      </Link>
-    </article>
   );
 }

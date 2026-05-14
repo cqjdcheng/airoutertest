@@ -31,6 +31,13 @@ public sealed class AdminSitesController(RelaySiteAdminService relaySiteAdminSer
         return Ok(ApiResponseFactory.Success(HttpContext, new { id }));
     }
 
+    [HttpPost("pricing-preview")]
+    public async Task<IActionResult> PreviewPricing([FromBody] RelayPricingPreviewRequest request, CancellationToken cancellationToken)
+    {
+        var result = await relaySiteAdminService.PreviewPricingAsync(request, cancellationToken);
+        return Ok(ApiResponseFactory.Success(HttpContext, result));
+    }
+
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(ulong id, [FromBody] UpdateRelaySiteRequest request, CancellationToken cancellationToken)
     {

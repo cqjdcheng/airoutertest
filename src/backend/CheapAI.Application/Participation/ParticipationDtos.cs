@@ -23,6 +23,18 @@ public sealed class SelfTestResponse
 {
     public string Id { get; init; } = string.Empty;
 
+    public ulong? TestRecordId { get; init; }
+
+    public string TestType { get; init; } = "user";
+
+    public string SiteSlug { get; init; } = string.Empty;
+
+    public string SiteName { get; init; } = string.Empty;
+
+    public string ModelSlug { get; init; } = string.Empty;
+
+    public string ModelName { get; init; } = string.Empty;
+
     public string Status { get; init; } = string.Empty;
 
     public int? FirstTokenMs { get; init; }
@@ -230,5 +242,5 @@ public interface ISelfTestChallengeService
 {
     SelfTestChallengeResponse CreateChallenge();
 
-    bool VerifyAndConsume(string challengeId, string challengeAnswer);
+    Task<bool> VerifyAndConsumeAsync(string challengeId, string challengeAnswer, CancellationToken cancellationToken = default);
 }

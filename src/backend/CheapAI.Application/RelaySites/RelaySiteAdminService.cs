@@ -6,6 +6,7 @@ namespace CheapAI.Application.RelaySites;
 
 public sealed class RelaySiteAdminService(
     IRelaySiteRepository relaySiteRepository,
+    IRelayPricingCrawler relayPricingCrawler,
     ICurrentAdminAccessor currentAdminAccessor)
 {
     public Task<PagedResult<RelaySiteListItemResponse>> GetPagedAsync(RelaySiteListQuery query, CancellationToken cancellationToken = default)
@@ -44,7 +45,8 @@ public sealed class RelaySiteAdminService(
             HasDocs = request.HasDocs,
             DocsUrl = request.DocsUrl,
             InviteUrl = request.InviteUrl,
-            RecentReview = request.RecentReview
+            RecentReview = request.RecentReview,
+            Offers = request.Offers
         };
 
         return await relaySiteRepository.InsertAsync(normalizedRequest, currentAdminAccessor.AdminUserId, cancellationToken);
@@ -76,7 +78,8 @@ public sealed class RelaySiteAdminService(
             HasDocs = request.HasDocs,
             DocsUrl = request.DocsUrl,
             InviteUrl = request.InviteUrl,
-            RecentReview = request.RecentReview
+            RecentReview = request.RecentReview,
+            Offers = request.Offers
         };
 
         await relaySiteRepository.UpdateAsync(id, normalizedRequest, currentAdminAccessor.AdminUserId, cancellationToken);
@@ -91,5 +94,12 @@ public sealed class RelaySiteAdminService(
         }
 
         await relaySiteRepository.UpdateStatusAsync(id, request.Status, currentAdminAccessor.AdminUserId, cancellationToken);
+    }
+
+    public Task<IReadOnlyList<RelayPricingPreviewItemResponse>> PreviewPricingAsync(
+        RelayPricingPreviewRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        return relayPricingCrawler.PreviewAsync(request, cancellationToken);
     }
 }

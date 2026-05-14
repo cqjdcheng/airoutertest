@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PublicHeader } from "@/app/components/PublicHeader";
+import { PublicPageHero } from "@/app/components/PublicPageHero";
 import { getJson, type PublicEnvelope } from "@/lib/api";
 import { money, riskLabel, riskTone, score } from "@/lib/format";
 
@@ -29,18 +30,33 @@ type PagedResult<T> = {
 export default async function ModelsPage() {
   const response = await getJson<PublicEnvelope<PagedResult<ModelItem>>>("/api/v1/public/models?page=1&pageSize=100");
   const items = response?.data.items ?? [];
+  const lowRiskCount = items.filter((item) => item.riskLevel === "low").length;
+  const coveredRelayCount = items.reduce((sum, item) => sum + item.relaySiteCount, 0);
 
   return (
-    <main className="min-h-screen">
+    <main className="public-shell">
       <PublicHeader />
-      <section className="public-container py-10 lg:py-14">
-        <p className="eyebrow">Model Directory</p>
-        <h1 className="page-title mt-4">模型大全</h1>
-        <p className="body-lead mt-5 max-w-3xl">
-          展示所有收录模型，并按“模型 + 中转站”维度给出当前最便宜中转和稳定性摘要。
-        </p>
 
-        <section className="data-table mt-8">
+      <section className="public-container public-main">
+        <PublicPageHero
+          eyebrow="Model Directory"
+          title="模型大全"
+          description="按模型维度聚合官方定价、当前最便宜中转、稳定性和风险摘要，适合“我先确定模型，再找站”的决策方式。"
+          aside={
+            <>
+              <div className="metric-card">
+                <span>收录模型</span>
+                <strong>{items.length}</strong>
+              </div>
+              <div className="metric-card mt-3">
+                <span>关联站点覆盖</span>
+                <strong>{coveredRelayCount}</strong>
+              </div>
+            </>
+          }
+        />
+
+        <section className="data-table">
           <div className="overflow-x-auto">
             <table className="recommend-table">
               <thead>
@@ -59,18 +75,26 @@ export default async function ModelsPage() {
                     <tr key={item.modelSlug}>
                       <td>
                         <strong>{item.modelName}</strong>
-                        <span>{item.vendor} / {item.officialModelId}</span>
+                        <span>
+                          {item.vendor} / {item.officialModelId}
+                        </span>
                       </td>
-                      <td>{money(item.officialInputPriceUsd)} / {money(item.officialOutputPriceUsd)}</td>
+                      <td>
+                        {money(item.officialInputPriceUsd)} / {money(item.officialOutputPriceUsd)}
+                      </td>
                       <td>
                         {item.cheapestSiteSlug ? (
                           <Link href={`/sites/${item.cheapestSiteSlug}`} className="text-button">
                             {item.cheapestSiteName}
                           </Link>
-                        ) : "-"}
+                        ) : (
+                          "-"
+                        )}
                         <span>覆盖 {item.relaySiteCount} 个站点</span>
                       </td>
-                      <td>{money(item.effectiveInputPriceUsd)} / {money(item.effectiveOutputPriceUsd)}</td>
+                      <td>
+                        {money(item.effectiveInputPriceUsd)} / {money(item.effectiveOutputPriceUsd)}
+                      </td>
                       <td>
                         稳定 {score(item.stabilityScore)}
                         <span className="status-pill" data-tone={riskTone(item.riskLevel)}>

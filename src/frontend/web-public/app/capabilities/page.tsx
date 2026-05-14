@@ -1,4 +1,5 @@
 import { BackLink, PublicHeader } from "@/app/components/PublicHeader";
+import { PublicPageHero } from "@/app/components/PublicPageHero";
 import { getJson, type PublicEnvelope } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 
@@ -16,19 +17,30 @@ export default async function CapabilitiesPage() {
   const items = response?.data ?? [];
 
   return (
-    <main className="min-h-screen">
+    <main className="public-shell">
       <PublicHeader />
-      <section className="public-container py-10 lg:py-14">
-        <BackLink />
-        <div className="mt-6 glass-card p-6 sm:p-8">
-          <p className="eyebrow">Model Capability</p>
-          <h1 className="page-title mt-4">模型能力榜</h1>
-          <p className="body-lead mt-5 max-w-3xl">
-            能力榜引用第三方公开来源，仅作为价格、稳定性和风险判断之外的参考口径。
-          </p>
-        </div>
 
-        <section className="data-table mt-8">
+      <section className="public-container public-main">
+        <BackLink />
+        <PublicPageHero
+          eyebrow="Model Capability"
+          title="模型能力榜"
+          description="能力榜引用第三方公开来源，仅作为价格、稳定性和风险判断之外的参考口径，不参与 CheapAI 的综合评分。"
+          aside={
+            <>
+              <div className="metric-card">
+                <span>收录条目</span>
+                <strong>{items.length}</strong>
+              </div>
+              <div className="metric-card mt-3">
+                <span>用途定位</span>
+                <strong>辅助参考</strong>
+              </div>
+            </>
+          }
+        />
+
+        <section className="data-table">
           {items.length > 0 ? (
             <div className="divide-y divide-[var(--line)]">
               {items.map((item) => (
@@ -46,9 +58,7 @@ export default async function CapabilitiesPage() {
                     <div className="text-[var(--text-secondary)]">能力分</div>
                     <div className="mt-1 text-xl font-semibold">{item.capabilityScore}</div>
                   </div>
-                  <div className="text-[var(--text-secondary)] md:col-start-2 md:col-span-3">
-                    快照：{formatDateTime(item.snapshotAt)}
-                  </div>
+                  <div className="text-[var(--text-secondary)] md:col-start-2 md:col-span-3">快照：{formatDateTime(item.snapshotAt)}</div>
                 </div>
               ))}
             </div>

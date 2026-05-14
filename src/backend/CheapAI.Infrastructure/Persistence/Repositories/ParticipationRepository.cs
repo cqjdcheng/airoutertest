@@ -1,9 +1,12 @@
 using CheapAI.Application.Common.Paging;
 using CheapAI.Application.Participation;
+using CheapAI.Application.RelaySites;
 using CheapAI.Infrastructure.Persistence.Entities;
 using Microsoft.Extensions.Options;
 using MySqlConnector;
 using SqlSugar;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 
 namespace CheapAI.Infrastructure.Persistence.Repositories;
@@ -38,7 +41,8 @@ public sealed class ParticipationRepository(ISqlSugarClient db, IOptions<MySqlOp
         };
 
         await db.Insertable(entity).ExecuteCommandAsync(cancellationToken);
-        return MapSelfTest(entity);
+        var testRecord = await CreateUnifiedTestRecordAsync(entity, request, result, now, cancellationToken);
+        return MapSelfTest(entity, testRecord);
     }
 
     public async Task<SelfTestResponse?> GetSelfTestAsync(string id, CancellationToken cancellationToken = default)
@@ -265,11 +269,119 @@ public sealed class ParticipationRepository(ISqlSugarClient db, IOptions<MySqlOp
             .ExecuteCommandAsync(cancellationToken);
     }
 
-    private static SelfTestResponse MapSelfTest(SelfTestEntity entity)
+    private async Task<TestRecordEntity> CreateUnifiedTestRecordAsync(
+        SelfTestEntity selfTest,
+        CreateSelfTestRequest request,
+        SelfTestExecutionResult result,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var normalizedSiteUrl = NormalizeEndpointUrl(request.SiteUrl);
+        var site = await db.Queryable<RelaySiteEntity>()
+            .FirstAsync(x => x.DeletedAt == null && x.BaseUrl == normalizedSiteUrl, cancellationToken);
+        var model = await db.Queryable<AiModelEntity>()
+            .FirstAsync(x =>
+                    x.DeletedAt == null &&
+                    (x.Slug == request.ModelName ||
+                     x.OfficialModelId == request.ModelName ||
+                     x.DisplayName == request.ModelName),
+                cancellationToken);
+
+        var record = new TestRecordEntity
+        {
+            SiteId = site?.Id ?? 0,
+            ModelId = model?.Id ?? 0,
+            SiteUrl = normalizedSiteUrl,
+            SiteName = site?.Name ?? HostFromUrl(normalizedSiteUrl),
+            ModelSlug = model?.Slug ?? SlugHelper.Normalize(null, request.ModelName),
+            ModelName = model?.DisplayName ?? request.ModelName,
+            TestType = "user",
+            IsStream = request.IsStream,
+            Status = NormalizeRecordStatus(result.Status),
+            FirstTokenMs = result.FirstTokenMs,
+            FullResponseMs = result.FullResponseMs,
+            ErrorCode = NormalizeRecordStatus(result.Status) == "success" ? null : "self_test_failed",
+            ErrorMessage = NormalizeRecordStatus(result.Status) == "success" ? null : result.ResultSummary,
+            PromptHash = HashText($"{request.TestMode}:{request.ModelName}:{request.IsStream}"),
+            ResponseHash = HashText(JsonSerializer.Serialize(result.Checks)),
+            DetectedModelId = null,
+            RiskScore = result.RiskScore,
+            RiskLevel = result.RiskLevel,
+            ResultSummary = result.ResultSummary,
+            MatchScore = result.MatchScore,
+            InputTokens = result.InputTokens,
+            OutputTokens = result.OutputTokens,
+            TotalTokens = result.TotalTokens,
+            EstimatedTokens = result.EstimatedTokens,
+            TokensPerSecond = result.TokensPerSecond,
+            ChecksJson = JsonSerializer.Serialize(result.Checks),
+            SelfTestId = selfTest.Id,
+            TestedAt = now,
+            CreatedAt = now
+        };
+
+        record.Id = (ulong)await db.Insertable(record).ExecuteReturnBigIdentityAsync();
+
+        if (record.SiteId > 0 && record.ModelId > 0)
+        {
+            await UpsertUnifiedRiskEvidenceAsync(record, now, cancellationToken);
+        }
+
+        return record;
+    }
+
+    private async Task UpsertUnifiedRiskEvidenceAsync(TestRecordEntity record, DateTime now, CancellationToken cancellationToken)
+    {
+        var entity = new RiskEvidenceEntity
+        {
+            SiteId = record.SiteId,
+            ModelId = record.ModelId,
+            TestRecordId = record.Id,
+            RuleCode = "unified_test_signal",
+            RiskLevel = record.RiskLevel,
+            RiskScore = record.RiskScore,
+            EvidenceSummary = record.ResultSummary ?? "统一测试记录生成的风险信号。",
+            EvidenceJson = JsonSerializer.Serialize(new
+            {
+                record.Status,
+                record.TestType,
+                record.FirstTokenMs,
+                record.FullResponseMs,
+                record.MatchScore,
+                record.InputTokens,
+                record.OutputTokens,
+                record.TotalTokens
+            }),
+            ReviewStatus = "pending",
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+
+        var existing = await db.Queryable<RiskEvidenceEntity>()
+            .FirstAsync(x => x.SiteId == record.SiteId && x.ModelId == record.ModelId && x.RuleCode == entity.RuleCode, cancellationToken);
+
+        if (existing is null)
+        {
+            await db.Insertable(entity).ExecuteCommandAsync(cancellationToken);
+            return;
+        }
+
+        entity.Id = existing.Id;
+        entity.CreatedAt = existing.CreatedAt;
+        await db.Updateable(entity).ExecuteCommandAsync(cancellationToken);
+    }
+
+    private static SelfTestResponse MapSelfTest(SelfTestEntity entity, TestRecordEntity? testRecord = null)
     {
         return new SelfTestResponse
         {
             Id = entity.Id,
+            TestRecordId = testRecord?.Id,
+            TestType = testRecord?.TestType ?? "user",
+            SiteSlug = testRecord?.SiteId > 0 ? string.Empty : string.Empty,
+            SiteName = testRecord?.SiteName ?? entity.SiteUrl,
+            ModelSlug = testRecord?.ModelSlug ?? SlugHelper.Normalize(null, entity.ModelName),
+            ModelName = testRecord?.ModelName ?? entity.ModelName,
             Status = entity.Status,
             FirstTokenMs = entity.FirstTokenMs,
             FullResponseMs = entity.FullResponseMs,
@@ -287,6 +399,31 @@ public sealed class ParticipationRepository(ISqlSugarClient db, IOptions<MySqlOp
                 : JsonSerializer.Deserialize<IReadOnlyList<SelfTestProbeResult>>(entity.ChecksJson) ?? [],
             CreatedAt = entity.CreatedAt
         };
+    }
+
+    private static string NormalizeEndpointUrl(string siteUrl)
+    {
+        return siteUrl.Trim().TrimEnd('/');
+    }
+
+    private static string HostFromUrl(string siteUrl)
+    {
+        return Uri.TryCreate(siteUrl, UriKind.Absolute, out var uri) ? uri.Host : siteUrl;
+    }
+
+    private static string NormalizeRecordStatus(string status)
+    {
+        return status.Equals("succeeded", StringComparison.OrdinalIgnoreCase) ||
+               status.Equals("success", StringComparison.OrdinalIgnoreCase) ||
+               status.Equals("pass", StringComparison.OrdinalIgnoreCase)
+            ? "success"
+            : "failed";
+    }
+
+    private static string HashText(string value)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
     private static ArticleDetailResponse MapArticleDetail(ArticleEntity entity)

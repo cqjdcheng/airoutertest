@@ -1,4 +1,5 @@
 using CheapAI.Application.Common.Paging;
+using CheapAI.Application.Scoring;
 using CheapAI.Application.RelaySites;
 using CheapAI.Infrastructure.Persistence.Entities;
 using SqlSugar;
@@ -32,7 +33,14 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
         var entity = await db.Queryable<RelaySiteEntity>()
             .FirstAsync(x => x.Id == id && x.DeletedAt == null, cancellationToken);
 
-        return entity is null ? null : MapDetail(entity);
+        if (entity is null)
+        {
+            return null;
+        }
+
+        var offers = await LoadOffersAsync(id, cancellationToken);
+        var recentTests = await LoadRecentTestsAsync(id, cancellationToken);
+        return MapDetail(entity, offers, recentTests);
     }
 
     public async Task<PagedResult<RelaySiteListItemResponse>> GetPagedAsync(RelaySiteListQuery query, CancellationToken cancellationToken = default)
@@ -98,30 +106,54 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
             UpdatedBy = adminUserId
         };
 
-        return (ulong)await db.Insertable(entity).ExecuteReturnBigIdentityAsync();
+        try
+        {
+            db.Ado.BeginTran();
+            var siteId = (ulong)await db.Insertable(entity).ExecuteReturnBigIdentityAsync();
+            await UpsertOffersCoreAsync(siteId, request.Offers, cancellationToken);
+            db.Ado.CommitTran();
+            return siteId;
+        }
+        catch
+        {
+            db.Ado.RollbackTran();
+            throw;
+        }
     }
 
-    public Task UpdateAsync(ulong id, UpdateRelaySiteRequest request, ulong? adminUserId, CancellationToken cancellationToken = default)
+    public async Task UpdateAsync(ulong id, UpdateRelaySiteRequest request, ulong? adminUserId, CancellationToken cancellationToken = default)
     {
-        return db.Updateable<RelaySiteEntity>()
-            .SetColumns(x => new RelaySiteEntity
-            {
-                Slug = request.Slug,
-                Name = request.Name,
-                BaseUrl = request.BaseUrl,
-                WebsiteUrl = request.WebsiteUrl,
-                Description = request.Description,
-                SupportsRefund = request.SupportsRefund,
-                SupportsInvoice = request.SupportsInvoice,
-                HasDocs = request.HasDocs,
-                DocsUrl = request.DocsUrl,
-                InviteUrl = request.InviteUrl,
-                RecentReview = request.RecentReview,
-                UpdatedAt = DateTime.UtcNow,
-                UpdatedBy = adminUserId
-            })
-            .Where(x => x.Id == id && x.DeletedAt == null)
-            .ExecuteCommandAsync(cancellationToken);
+        try
+        {
+            db.Ado.BeginTran();
+            await db.Updateable<RelaySiteEntity>()
+                .SetColumns(x => new RelaySiteEntity
+                {
+                    Slug = request.Slug,
+                    Name = request.Name,
+                    BaseUrl = request.BaseUrl,
+                    WebsiteUrl = request.WebsiteUrl,
+                    Description = request.Description,
+                    SupportsRefund = request.SupportsRefund,
+                    SupportsInvoice = request.SupportsInvoice,
+                    HasDocs = request.HasDocs,
+                    DocsUrl = request.DocsUrl,
+                    InviteUrl = request.InviteUrl,
+                    RecentReview = request.RecentReview,
+                    UpdatedAt = DateTime.UtcNow,
+                    UpdatedBy = adminUserId
+                })
+                .Where(x => x.Id == id && x.DeletedAt == null)
+                .ExecuteCommandAsync(cancellationToken);
+
+            await UpsertOffersCoreAsync(id, request.Offers, cancellationToken);
+            db.Ado.CommitTran();
+        }
+        catch
+        {
+            db.Ado.RollbackTran();
+            throw;
+        }
     }
 
     public Task UpdateStatusAsync(ulong id, string status, ulong? adminUserId, CancellationToken cancellationToken = default)
@@ -137,7 +169,188 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
             .ExecuteCommandAsync(cancellationToken);
     }
 
-    private static RelaySiteDetailResponse MapDetail(RelaySiteEntity entity)
+    private async Task<IReadOnlyList<RelaySiteOfferResponse>> LoadOffersAsync(ulong siteId, CancellationToken cancellationToken)
+    {
+        return await db.Queryable<RelayOfferEntity, AiModelEntity>(
+                (offer, model) => offer.ModelId == model.Id)
+            .Where((offer, model) => offer.SiteId == siteId && model.DeletedAt == null)
+            .OrderBy((offer, model) => offer.SourceType, OrderByType.Asc)
+            .OrderBy((offer, model) => model.SortOrder, OrderByType.Asc)
+            .OrderBy((offer, model) => offer.UpdatedAt, OrderByType.Desc)
+            .Select((offer, model) => new RelaySiteOfferResponse
+            {
+                Id = offer.Id,
+                ModelId = model.Id,
+                ModelSlug = model.Slug,
+                Vendor = model.Vendor,
+                OfficialModelId = model.OfficialModelId,
+                DisplayName = model.DisplayName,
+                OfficialInputPriceUsd = offer.OfficialInputPriceUsd,
+                OfficialOutputPriceUsd = offer.OfficialOutputPriceUsd,
+                SiteInputPriceUsd = offer.SiteInputPriceUsd,
+                SiteOutputPriceUsd = offer.SiteOutputPriceUsd,
+                EffectiveInputPriceUsd = offer.EffectiveInputPriceUsd,
+                EffectiveOutputPriceUsd = offer.EffectiveOutputPriceUsd,
+                RechargeRatio = offer.RechargeRatio,
+                BonusRatio = offer.BonusRatio,
+                SourceType = offer.SourceType,
+                Status = offer.Status,
+                CrawledAt = offer.CrawledAt,
+                ReviewedAt = offer.ReviewedAt
+            })
+            .ToListAsync(cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<RelaySiteTestRecordResponse>> LoadRecentTestsAsync(ulong siteId, CancellationToken cancellationToken)
+    {
+        return await db.Queryable<TestRecordEntity, AiModelEntity>(
+                (record, model) => record.ModelId == model.Id)
+            .Where((record, model) => record.SiteId == siteId && model.DeletedAt == null)
+            .OrderBy((record, model) => record.TestedAt, OrderByType.Desc)
+            .Select((record, model) => new RelaySiteTestRecordResponse
+            {
+                Id = record.Id,
+                ModelSlug = model.Slug,
+                ModelName = model.DisplayName,
+                TestType = record.TestType,
+                Status = record.Status,
+                FirstTokenMs = record.FirstTokenMs,
+                FullResponseMs = record.FullResponseMs,
+                RiskScore = record.RiskScore,
+                RiskLevel = record.RiskLevel,
+                ErrorMessage = record.ErrorMessage,
+                TestedAt = record.TestedAt
+            })
+            .Take(20)
+            .ToListAsync(cancellationToken);
+    }
+
+    private async Task UpsertOffersCoreAsync(ulong siteId, IReadOnlyList<RelaySiteOfferUpsertRequest> offers, CancellationToken cancellationToken)
+    {
+        foreach (var offer in offers)
+        {
+            var modelId = await ResolveModelIdAsync(offer, cancellationToken);
+            var now = DateTime.UtcNow;
+            var rechargeRatio = offer.RechargeRatio <= 0 ? 1 : offer.RechargeRatio;
+            var entity = new RelayOfferEntity
+            {
+                SiteId = siteId,
+                ModelId = modelId,
+                SourceType = string.IsNullOrWhiteSpace(offer.SourceType) ? "manual" : offer.SourceType.Trim(),
+                Currency = "USD",
+                OfficialInputPriceUsd = offer.OfficialInputPriceUsd,
+                OfficialOutputPriceUsd = offer.OfficialOutputPriceUsd,
+                SiteInputPriceUsd = offer.SiteInputPriceUsd,
+                SiteOutputPriceUsd = offer.SiteOutputPriceUsd,
+                RechargeRatio = rechargeRatio,
+                BonusRatio = offer.BonusRatio,
+                EffectiveInputPriceUsd = CalculateEffective(offer.SiteInputPriceUsd, rechargeRatio, offer.BonusRatio),
+                EffectiveOutputPriceUsd = CalculateEffective(offer.SiteOutputPriceUsd, rechargeRatio, offer.BonusRatio),
+                Status = string.IsNullOrWhiteSpace(offer.Status) ? "active" : offer.Status,
+                ReviewedAt = now,
+                CreatedAt = now,
+                UpdatedAt = now
+            };
+
+            var existing = await db.Queryable<RelayOfferEntity>()
+                .FirstAsync(x =>
+                    x.SiteId == siteId &&
+                    x.ModelId == modelId &&
+                    x.SourceType == entity.SourceType,
+                    cancellationToken);
+
+            if (existing is null)
+            {
+                await db.Insertable(entity).ExecuteCommandAsync(cancellationToken);
+                continue;
+            }
+
+            entity.Id = existing.Id;
+            entity.CreatedAt = existing.CreatedAt;
+            entity.CrawledAt = existing.CrawledAt;
+            await db.Updateable(entity).ExecuteCommandAsync(cancellationToken);
+        }
+    }
+
+    private async Task<ulong> ResolveModelIdAsync(RelaySiteOfferUpsertRequest offer, CancellationToken cancellationToken)
+    {
+        if (offer.ModelId is > 0)
+        {
+            return offer.ModelId.Value;
+        }
+
+        var vendor = string.IsNullOrWhiteSpace(offer.Vendor) ? "Custom" : offer.Vendor.Trim();
+        var officialModelId = offer.OfficialModelId?.Trim() ?? string.Empty;
+        var existing = await db.Queryable<AiModelEntity>()
+            .FirstAsync(x =>
+                x.DeletedAt == null &&
+                x.Vendor == vendor &&
+                x.OfficialModelId == officialModelId,
+                cancellationToken);
+
+        if (existing is not null)
+        {
+            await db.Updateable<AiModelEntity>()
+                .SetColumns(x => new AiModelEntity
+                {
+                    DisplayName = string.IsNullOrWhiteSpace(offer.DisplayName) ? existing.DisplayName : offer.DisplayName.Trim(),
+                    OfficialInputPriceUsd = offer.OfficialInputPriceUsd ?? existing.OfficialInputPriceUsd,
+                    OfficialOutputPriceUsd = offer.OfficialOutputPriceUsd ?? existing.OfficialOutputPriceUsd,
+                    UpdatedAt = DateTime.UtcNow
+                })
+                .Where(x => x.Id == existing.Id)
+                .ExecuteCommandAsync(cancellationToken);
+            return existing.Id;
+        }
+
+        var displayName = string.IsNullOrWhiteSpace(offer.DisplayName) ? officialModelId : offer.DisplayName.Trim();
+        var slug = await ResolveUniqueModelSlugAsync(
+            SlugHelper.Normalize(offer.ModelSlug, $"{vendor}-{officialModelId}"),
+            cancellationToken);
+        var now = DateTime.UtcNow;
+        return (ulong)await db.Insertable(new AiModelEntity
+        {
+            Slug = slug,
+            Vendor = vendor,
+            OfficialModelId = officialModelId,
+            DisplayName = displayName,
+            Description = "由中转站录入页自动创建。",
+            Status = "active",
+            SortOrder = 1000,
+            OfficialInputPriceUsd = offer.OfficialInputPriceUsd,
+            OfficialOutputPriceUsd = offer.OfficialOutputPriceUsd,
+            CreatedAt = now,
+            UpdatedAt = now
+        }).ExecuteReturnBigIdentityAsync();
+    }
+
+    private async Task<string> ResolveUniqueModelSlugAsync(string slug, CancellationToken cancellationToken)
+    {
+        if (!await db.Queryable<AiModelEntity>().AnyAsync(x => x.Slug == slug && x.DeletedAt == null, cancellationToken))
+        {
+            return slug;
+        }
+
+        var suffix = 2;
+        while (true)
+        {
+            var candidate = $"{slug}-{suffix++}";
+            if (!await db.Queryable<AiModelEntity>().AnyAsync(x => x.Slug == candidate && x.DeletedAt == null, cancellationToken))
+            {
+                return candidate;
+            }
+        }
+    }
+
+    private static decimal? CalculateEffective(decimal? price, decimal rechargeRatio, decimal bonusRatio)
+    {
+        return price.HasValue ? PriceCalculator.CalculateEffectiveUsd(price.Value, rechargeRatio, bonusRatio) : null;
+    }
+
+    private static RelaySiteDetailResponse MapDetail(
+        RelaySiteEntity entity,
+        IReadOnlyList<RelaySiteOfferResponse> offers,
+        IReadOnlyList<RelaySiteTestRecordResponse> recentTests)
     {
         return new RelaySiteDetailResponse
         {
@@ -155,7 +368,9 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
             InviteUrl = entity.InviteUrl,
             RecentReview = entity.RecentReview,
             CreatedAtUtc = entity.CreatedAt,
-            UpdatedAtUtc = entity.UpdatedAt
+            UpdatedAtUtc = entity.UpdatedAt,
+            Offers = offers,
+            RecentTests = recentTests
         };
     }
 }

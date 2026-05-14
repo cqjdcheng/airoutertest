@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.UMI_APP_API_BASE_URL ?? "http://127.0.0.1:5050";
+const API_BASE_URL = process.env.UMI_APP_API_BASE_URL ?? "http://127.0.0.1:5157";
 const ACCESS_TOKEN_KEY = "cheapai_admin_access_token";
 
 export type AdminProfile = {
@@ -54,13 +54,23 @@ async function rawRequest<T>(path: string, init?: RequestInit, retryOnUnauthoriz
     credentials: "include"
   });
 
-  const json = (await response.json()) as ApiEnvelope<T>;
+  const text = await response.text();
+  let json: ApiEnvelope<T> | null = null;
+
+  if (text) {
+    try {
+      json = JSON.parse(text) as ApiEnvelope<T>;
+    } catch {
+      json = null;
+    }
+  }
+
   if (response.status === 401 && retryOnUnauthorized && await refreshAccessToken()) {
     return rawRequest<T>(path, init, false);
   }
 
-  if (!response.ok || json.code !== 0) {
-    throw new Error(json.message || "请求失败");
+  if (!response.ok || !json || json.code !== 0) {
+    throw new Error(json?.message || `接口请求失败：HTTP ${response.status}`);
   }
 
   return json.data;

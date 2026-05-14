@@ -31,6 +31,27 @@ public sealed class AdminModelsController(ModelAdminService modelAdminService) :
         return Ok(ApiResponseFactory.Success(HttpContext, new { id }));
     }
 
+    [HttpPost("import-preview")]
+    public async Task<IActionResult> PreviewImport([FromBody] ModelImportPreviewRequest request, CancellationToken cancellationToken)
+    {
+        var result = await modelAdminService.PreviewImportAsync(request, cancellationToken);
+        return Ok(ApiResponseFactory.Success(HttpContext, result));
+    }
+
+    [HttpPost("openrouter-preview")]
+    public async Task<IActionResult> PreviewOpenRouterImport(CancellationToken cancellationToken)
+    {
+        var result = await modelAdminService.PreviewOpenRouterImportAsync(cancellationToken);
+        return Ok(ApiResponseFactory.Success(HttpContext, result));
+    }
+
+    [HttpPost("import")]
+    public async Task<IActionResult> Import([FromBody] ImportModelsRequest request, CancellationToken cancellationToken)
+    {
+        var result = await modelAdminService.ImportAsync(request, cancellationToken);
+        return Ok(ApiResponseFactory.Success(HttpContext, result));
+    }
+
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(ulong id, [FromBody] UpdateModelRequest request, CancellationToken cancellationToken)
     {

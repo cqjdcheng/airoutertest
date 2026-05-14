@@ -1,11 +1,11 @@
 const serverApiBaseUrl =
   process.env.API_BASE_URL ??
   process.env.NEXT_PUBLIC_API_BASE_URL ??
-  "http://127.0.0.1:5050";
+  "http://127.0.0.1:5157";
 
 const browserApiBaseUrl =
   process.env.NEXT_PUBLIC_API_BASE_URL ??
-  "http://127.0.0.1:5050";
+  "http://127.0.0.1:5157";
 
 export const apiBaseUrl = typeof window === "undefined" ? serverApiBaseUrl : browserApiBaseUrl;
 

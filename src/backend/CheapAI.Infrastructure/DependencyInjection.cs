@@ -5,11 +5,14 @@ using CheapAI.Application.Operations;
 using CheapAI.Application.Participation;
 using CheapAI.Application.Public;
 using CheapAI.Application.RelaySites;
+using CheapAI.Application.SiteSettings;
 using CheapAI.Infrastructure.Caching;
 using CheapAI.Infrastructure.Jobs;
+using CheapAI.Infrastructure.Models;
 using CheapAI.Infrastructure.Participation;
 using CheapAI.Infrastructure.Persistence;
 using CheapAI.Infrastructure.Persistence.Repositories;
+using CheapAI.Infrastructure.RelaySites;
 using CheapAI.Infrastructure.Security;
 using Hangfire;
 using Hangfire.MySql;
@@ -28,6 +31,7 @@ public static class DependencyInjection
         services.Configure<MySqlOptions>(configuration.GetSection(MySqlOptions.SectionName));
         services.Configure<RedisOptions>(configuration.GetSection(RedisOptions.SectionName));
         services.Configure<HangfireOptions>(configuration.GetSection(HangfireOptions.SectionName));
+        services.Configure<TurnstileOptions>(configuration.GetSection(TurnstileOptions.SectionName));
 
         var mySqlConnectionString = configuration[$"{MySqlOptions.SectionName}:ConnectionString"]
             ?? throw new InvalidOperationException("Missing MySQL connection string configuration.");
@@ -76,6 +80,8 @@ public static class DependencyInjection
         services.AddSingleton<IPasswordHasher, BcryptPasswordHasher>();
         services.AddSingleton<IRefreshTokenGenerator, RefreshTokenGenerator>();
         services.AddSingleton<IAccessTokenService, JwtAccessTokenService>();
+        services.AddSingleton<IModelCatalogCrawler, OpenAiCompatibleModelCatalogCrawler>();
+        services.AddSingleton<IRelayPricingCrawler, OneTrackerRelayPricingCrawler>();
         services.AddSingleton<ISelfTestRunner, OpenAiCompatibleSelfTestRunner>();
         services.AddSingleton<ISelfTestChallengeService, InMemorySelfTestChallengeService>();
 
@@ -83,11 +89,13 @@ public static class DependencyInjection
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
         services.AddScoped<IRelaySiteRepository, RelaySiteRepository>();
         services.AddScoped<IModelRepository, ModelRepository>();
+        services.AddScoped<IModelProviderRepository, ModelProviderRepository>();
         services.AddScoped<IModelRankingSnapshotRepository, ModelRankingSnapshotRepository>();
         services.AddScoped<IPublicSiteQueryRepository, PublicSiteQueryRepository>();
         services.AddScoped<IPublicCatalogRepository, PublicCatalogRepository>();
         services.AddScoped<IOperationsRepository, OperationsRepository>();
         services.AddScoped<IParticipationRepository, ParticipationRepository>();
+        services.AddScoped<ISiteSettingsRepository, SiteSettingsRepository>();
 
         return services;
     }

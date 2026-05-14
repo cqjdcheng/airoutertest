@@ -15,7 +15,7 @@ public sealed class CreateSelfTestRequestValidator : AbstractValidator<CreateSel
         RuleFor(x => x.ApiKey).NotEmpty().MaximumLength(2048);
         RuleFor(x => x.TestMode).NotEmpty().MaximumLength(32);
         RuleFor(x => x.ChallengeId).NotEmpty().MaximumLength(64);
-        RuleFor(x => x.ChallengeAnswer).NotEmpty().MaximumLength(16);
+        RuleFor(x => x.ChallengeAnswer).NotEmpty().MaximumLength(2048);
     }
 
     private static bool BeHttpUrl(string value)

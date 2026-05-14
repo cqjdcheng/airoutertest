@@ -1,10 +1,14 @@
+"use client";
+
 import Link from "next/link";
+import { usePublicBranding } from "@/app/components/PublicBrandProvider";
 
 type PublicHeaderProps = {
   featuredModel?: string;
 };
 
 export function PublicHeader({ featuredModel = "gpt-5.5" }: PublicHeaderProps) {
+  const branding = usePublicBranding();
   const links = [
     { href: "/sites", label: "中转站大全" },
     { href: "/models", label: "模型大全" },
@@ -13,23 +17,32 @@ export function PublicHeader({ featuredModel = "gpt-5.5" }: PublicHeaderProps) {
     { href: "/capabilities", label: "能力榜" },
     { href: "/articles", label: "文章" }
   ];
-
   return (
-    <header className="sticky top-0 z-40 border-b border-[var(--line)] bg-white/78 backdrop-blur-2xl">
-      <div className="public-container flex min-h-16 flex-col items-start justify-between gap-3 py-3 sm:flex-row sm:items-center sm:gap-4">
-        <Link href="/" className="flex items-center gap-2 text-lg font-semibold tracking-tight text-[var(--text-primary)]">
-          <span className="inline-flex size-8 items-center justify-center rounded-2xl bg-[var(--text-primary)] text-sm text-white">
-            C
+    <header className="site-header">
+      <div className="public-container site-header__inner">
+        <Link href="/" className="site-brand">
+          <span className="site-brand__mark" aria-hidden="true">
+            {branding.siteIconUrl ? <img src={branding.siteIconUrl} alt="" className="site-brand__image" /> : branding.siteName.slice(0, 1)}
           </span>
-          CheapAI
+          <span className="site-brand__content">
+            <strong>{branding.siteName}</strong>
+            <span>AI 中转比价与风险识别</span>
+          </span>
         </Link>
-        <nav className="flex w-full items-center gap-1 overflow-x-auto whitespace-nowrap text-sm text-[var(--text-secondary)] sm:w-auto sm:justify-end">
+
+        <nav className="site-nav" aria-label="主导航">
           {links.map((link) => (
-            <Link key={link.href} href={link.href} className="rounded-full px-3 py-2 transition hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]">
+            <Link key={link.href} href={link.href} className="site-nav__link">
               {link.label}
             </Link>
           ))}
         </nav>
+
+        <div className="site-header__actions">
+          <Link href="/self-test" className="primary-button">
+            立即自测
+          </Link>
+        </div>
       </div>
     </header>
   );

@@ -1,37 +1,51 @@
-import { useEffect, useMemo, useState } from "react";
+import { CloudDownloadOutlined } from "@ant-design/icons";
+import { useEffect, useMemo, useState, type Key } from "react";
 import {
   DrawerForm,
   ProCard,
   ProFormDigit,
   ProFormSelect,
+  ProFormSwitch,
   ProFormText,
   ProFormTextArea
 } from "@ant-design/pro-components";
-import { Alert, Button, Form, Input, Popconfirm, Select, Space, Table, Tag, message } from "antd";
+import { Alert, Button, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, message } from "antd";
 import AuthGuard from "@/components/AuthGuard";
 import AdminPage from "@/components/AdminPage";
 import {
   createModel,
   fetchModel,
   fetchModels,
+  importModels,
+  previewOpenRouterModels,
   updateModel,
   updateModelStatus,
+  type ModelImportPreviewItem,
   type ModelListItem
 } from "@/services/models";
+import { getAccessToken } from "@/services/api";
+import { fetchActiveModelProviders, type ModelProviderListItem } from "@/services/model-providers";
 
 type ModelFormValues = {
+  providerId?: number;
   slug?: string;
   vendor?: string;
   officialModelId?: string;
   displayName?: string;
   description?: string;
   status?: string;
+  isHot?: boolean;
+  sortOrder?: number;
   officialInputPriceUsd?: number;
   officialOutputPriceUsd?: number;
+  capabilityScore?: number;
+  capabilitySource?: string;
 };
 
 const defaultModelValues: ModelFormValues = {
-  status: "active"
+  status: "active",
+  isHot: false,
+  sortOrder: 1000
 };
 
 const statusLabels: Record<string, string> = {
@@ -46,22 +60,36 @@ const statusColors: Record<string, string> = {
   deprecated: "default"
 };
 
+function toNumber(value: unknown) {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : undefined;
+}
+
 export default function ModelsPage() {
   const [items, setItems] = useState<ModelListItem[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerLoading, setDrawerLoading] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importRows, setImportRows] = useState<ModelImportPreviewItem[]>([]);
+  const [selectedImportIds, setSelectedImportIds] = useState<Key[]>([]);
   const [editing, setEditing] = useState<ModelListItem | null>(null);
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [providers, setProviders] = useState<ModelProviderListItem[]>([]);
   const [form] = Form.useForm<ModelFormValues>();
 
   const filteredItems = useMemo(() => {
     const normalizedKeyword = keyword.trim().toLowerCase();
 
     return items.filter((item) => {
-      const keywordMatched = [item.displayName, item.slug, item.vendor, item.officialModelId]
+      const keywordMatched = [item.displayName, item.slug, item.vendor, item.providerName, item.officialModelId]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(normalizedKeyword));
       const statusMatched = statusFilter === "all" || item.status === statusFilter;
@@ -73,13 +101,26 @@ export default function ModelsPage() {
     setLoading(true);
 
     try {
-      const result = await fetchModels(1, 80);
+      const result = await fetchModels(1, 200);
       setItems(result.items);
       setError("");
     } catch (requestError) {
       setError((requestError as Error).message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadProviders() {
+    if (!getAccessToken()) {
+      return;
+    }
+
+    try {
+      const result = await fetchActiveModelProviders();
+      setProviders(result);
+    } catch (requestError) {
+      message.warning(`模型提供商加载失败：${(requestError as Error).message}`);
     }
   }
 
@@ -99,7 +140,8 @@ export default function ModelsPage() {
       form.resetFields();
       form.setFieldsValue({
         ...defaultModelValues,
-        ...detail
+        ...detail,
+        providerId: detail.providerId
       });
       setDrawerOpen(true);
     } finally {
@@ -109,14 +151,19 @@ export default function ModelsPage() {
 
   async function submit(values: ModelFormValues) {
     const payload = {
+      providerId: values.providerId,
       slug: values.slug,
       vendor: values.vendor ?? "",
       officialModelId: values.officialModelId ?? "",
       displayName: values.displayName ?? "",
       description: values.description,
-      officialInputPriceUsd: values.officialInputPriceUsd,
-      officialOutputPriceUsd: values.officialOutputPriceUsd,
-      status: values.status ?? "active"
+      officialInputPriceUsd: toNumber(values.officialInputPriceUsd),
+      officialOutputPriceUsd: toNumber(values.officialOutputPriceUsd),
+      status: values.status ?? "active",
+      isHot: Boolean(values.isHot),
+      sortOrder: toNumber(values.sortOrder) ?? 1000,
+      capabilityScore: toNumber(values.capabilityScore),
+      capabilitySource: values.capabilitySource
     };
 
     if (editing) {
@@ -140,16 +187,70 @@ export default function ModelsPage() {
     await load();
   }
 
+  async function previewImport() {
+    setImportLoading(true);
+    try {
+      const rows = await previewOpenRouterModels();
+      setImportRows(rows);
+      setSelectedImportIds(rows.map((row) => row.officialModelId));
+      message.success(`从 OpenRouter 抓取到 ${rows.length} 个模型`);
+    } catch (requestError) {
+      message.error((requestError as Error).message);
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
+  async function submitImport() {
+    const selectedRows = importRows.filter((row) => selectedImportIds.includes(row.officialModelId));
+    if (!selectedRows.length) {
+      message.warning("请选择要导入的模型");
+      return;
+    }
+
+    setImportLoading(true);
+    try {
+      const result = await importModels({
+        models: selectedRows.map((row, index) => ({
+          providerSlug: row.providerSlug,
+          providerName: row.providerName,
+          vendor: row.vendor || row.providerName,
+          officialModelId: row.officialModelId,
+          displayName: row.displayName,
+          description: row.description,
+          status: "active",
+          isHot: false,
+          sortOrder: 1000 + index,
+          officialInputPriceUsd: row.officialInputPriceUsd,
+          officialOutputPriceUsd: row.officialOutputPriceUsd,
+          capabilityScore: row.capabilityScore,
+          capabilitySource: row.capabilitySource
+        }))
+      });
+      message.success(`导入完成：新增 ${result.createdCount}，更新 ${result.updatedCount}`);
+      setImportOpen(false);
+      await load();
+    } catch (requestError) {
+      message.error((requestError as Error).message);
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
   useEffect(() => {
     void load();
+    void loadProviders();
   }, []);
 
   return (
     <AuthGuard>
       <AdminPage
         title="模型目录"
-        subtitle="模型主数据以目录页方式集中维护，新增和编辑改为抽屉处理，避免为单条记录打断整页上下文。"
+        subtitle="维护模型主数据、官方价格、首页热门展示和排序权重。"
         extra={[
+          <Button key="import" icon={<CloudDownloadOutlined />} onClick={() => setImportOpen(true)}>
+            抓取 OpenRouter
+          </Button>,
           <Button key="create" type="primary" onClick={openCreateDrawer}>
             新增模型
           </Button>,
@@ -160,7 +261,7 @@ export default function ModelsPage() {
         metrics={[
           { label: "全部模型", value: items.length, note: "后台模型档案" },
           { label: "公开展示", value: items.filter((item) => item.status === "active").length, note: "参与排行与详情页" },
-          { label: "厂商数量", value: new Set(items.map((item) => item.vendor)).size, note: "按 Vendor 聚合" },
+          { label: "热门模型", value: items.filter((item) => item.isHot).length, note: "用户端首页模型 Tab" },
           { label: "带官方价格", value: items.filter((item) => item.officialInputPriceUsd || item.officialOutputPriceUsd).length, note: "用于价格对比" }
         ]}
       >
@@ -205,22 +306,34 @@ export default function ModelsPage() {
                   </div>
                 )
               },
-              { title: "Vendor", dataIndex: "vendor", width: 140 },
+              { title: "提供商", width: 130, render: (_, record) => record.providerName || record.vendor },
               { title: "Official ID", dataIndex: "officialModelId", ellipsis: true },
               {
                 title: "官方价格",
-                width: 180,
+                width: 170,
                 render: (_, record) => `$${record.officialInputPriceUsd ?? "-"} / $${record.officialOutputPriceUsd ?? "-"}`
+              },
+              {
+                title: "评分",
+                width: 100,
+                render: (_, record) => record.capabilityScore ? `${record.capabilityScore}` : "-"
+              },
+              { title: "排序", dataIndex: "sortOrder", width: 80 },
+              {
+                title: "热门",
+                dataIndex: "isHot",
+                width: 90,
+                render: (isHot: boolean) => isHot ? <Tag color="gold">热门</Tag> : <Tag>普通</Tag>
               },
               {
                 title: "状态",
                 dataIndex: "status",
-                width: 110,
+                width: 100,
                 render: (status: string) => <Tag color={statusColors[status] ?? "default"}>{statusLabels[status] ?? status}</Tag>
               },
               {
                 title: "操作",
-                width: 240,
+                width: 220,
                 render: (_, record) => (
                   <Space>
                     <Button type="link" onClick={() => openEditDrawer(record)}>
@@ -248,7 +361,7 @@ export default function ModelsPage() {
           form={form}
           open={drawerOpen}
           title={editing ? "编辑模型" : "新增模型"}
-          width={560}
+          width={600}
           loading={drawerLoading}
           drawerProps={{
             destroyOnClose: false,
@@ -266,7 +379,17 @@ export default function ModelsPage() {
         >
           <ProFormText name="displayName" label="展示名称" rules={[{ required: true, message: "请输入展示名称" }]} />
           <ProFormText name="slug" label="Slug" />
-          <ProFormText name="vendor" label="Vendor" rules={[{ required: true, message: "请输入 Vendor" }]} />
+          <ProFormSelect
+            name="providerId"
+            label="模型提供商"
+            showSearch
+            options={providers.map((provider) => ({
+              label: provider.name,
+              value: provider.id
+            }))}
+            placeholder="请选择提供商；旧数据可继续使用 Vendor"
+          />
+          <ProFormText name="vendor" label="兼容 Vendor" />
           <ProFormText name="officialModelId" label="Official ID" rules={[{ required: true, message: "请输入 Official ID" }]} />
           <ProFormTextArea name="description" label="模型说明" fieldProps={{ rows: 4 }} />
           <ProFormSelect
@@ -278,9 +401,54 @@ export default function ModelsPage() {
               { label: "弃用", value: "deprecated" }
             ]}
           />
+          <ProFormSwitch name="isHot" label="首页热门模型" />
+          <ProFormDigit name="sortOrder" label="排序值" min={0} max={999999} fieldProps={{ precision: 0 }} />
           <ProFormDigit name="officialInputPriceUsd" label="官方输入价 USD" fieldProps={{ precision: 6 }} />
           <ProFormDigit name="officialOutputPriceUsd" label="官方输出价 USD" fieldProps={{ precision: 6 }} />
+          <ProFormDigit name="capabilityScore" label="能力评分" min={0} max={100} fieldProps={{ precision: 2 }} />
+          <ProFormText name="capabilitySource" label="评分来源" />
         </DrawerForm>
+
+        <Modal
+          title="从 OpenRouter 抓取主流模型"
+          open={importOpen}
+          width={920}
+          confirmLoading={importLoading}
+          onOk={submitImport}
+          onCancel={() => setImportOpen(false)}
+          okText="导入选中"
+        >
+          <Alert
+            type="info"
+            showIcon
+            message="数据来源：OpenRouter 官方 /api/v1/models"
+            description="价格按 USD / 1M tokens 换算；评分基于 OpenRouter 返回的上下文、工具调用、推理、结构化输出和多模态字段生成。"
+            style={{ marginBottom: 16 }}
+          />
+          <Space wrap style={{ marginBottom: 16 }}>
+            <Button loading={importLoading} onClick={previewImport}>
+              抓取 OpenRouter 预览
+            </Button>
+          </Space>
+          <Table<ModelImportPreviewItem>
+            rowKey="officialModelId"
+            size="small"
+            dataSource={importRows}
+            pagination={{ pageSize: 8 }}
+            rowSelection={{
+              selectedRowKeys: selectedImportIds,
+              onChange: (keys) => setSelectedImportIds(keys)
+            }}
+            columns={[
+              { title: "模型", dataIndex: "displayName" },
+              { title: "提供商", dataIndex: "providerName", width: 130 },
+              { title: "Official ID", dataIndex: "officialModelId", ellipsis: true },
+              { title: "官方输入价", dataIndex: "officialInputPriceUsd", width: 120, render: (value?: number) => value ?? "-" },
+              { title: "官方输出价", dataIndex: "officialOutputPriceUsd", width: 120, render: (value?: number) => value ?? "-" },
+              { title: "评分", dataIndex: "capabilityScore", width: 90, render: (value?: number) => value ?? "-" }
+            ]}
+          />
+        </Modal>
       </AdminPage>
     </AuthGuard>
   );

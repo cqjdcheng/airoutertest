@@ -2,13 +2,20 @@ import { apiRequest } from "./api";
 
 export type ModelListItem = {
   id: number;
+  providerId?: number;
+  providerName?: string;
   slug: string;
   vendor: string;
   officialModelId: string;
   displayName: string;
   status: string;
+  isHot: boolean;
+  sortOrder: number;
   officialInputPriceUsd?: number;
   officialOutputPriceUsd?: number;
+  capabilityScore?: number;
+  capabilitySource?: string;
+  capabilityUpdatedAtUtc?: string;
   description?: string;
   createdAtUtc?: string;
   updatedAtUtc?: string;
@@ -26,14 +33,19 @@ export async function fetchModels(page = 1, pageSize = 20) {
 }
 
 export async function createModel(payload: {
+  providerId?: number;
   slug?: string;
-  vendor: string;
+  vendor?: string;
   officialModelId: string;
   displayName: string;
   description?: string;
   status?: string;
+  isHot?: boolean;
+  sortOrder?: number;
   officialInputPriceUsd?: number;
   officialOutputPriceUsd?: number;
+  capabilityScore?: number;
+  capabilitySource?: string;
 }) {
   return apiRequest<{ id: number }>("/api/v1/admin/models", {
     method: "POST",
@@ -46,14 +58,19 @@ export async function fetchModel(id: number) {
 }
 
 export async function updateModel(id: number, payload: {
+  providerId?: number;
   slug?: string;
-  vendor: string;
+  vendor?: string;
   officialModelId: string;
   displayName: string;
   description?: string;
   status?: string;
+  isHot?: boolean;
+  sortOrder?: number;
   officialInputPriceUsd?: number;
   officialOutputPriceUsd?: number;
+  capabilityScore?: number;
+  capabilitySource?: string;
 }) {
   return apiRequest<void>(`/api/v1/admin/models/${id}`, {
     method: "PUT",
@@ -65,5 +82,61 @@ export async function updateModelStatus(id: number, status: string) {
   return apiRequest<void>(`/api/v1/admin/models/${id}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status })
+  });
+}
+
+export type ModelImportPreviewItem = {
+  providerSlug: string;
+  providerName: string;
+  vendor: string;
+  officialModelId: string;
+  displayName: string;
+  description?: string;
+  officialInputPriceUsd?: number;
+  officialOutputPriceUsd?: number;
+  capabilityScore?: number;
+  capabilitySource?: string;
+};
+
+export async function previewModelImport(payload: {
+  baseUrl: string;
+  apiKey?: string;
+  vendor: string;
+}) {
+  return apiRequest<ModelImportPreviewItem[]>("/api/v1/admin/models/import-preview", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function previewOpenRouterModels() {
+  return apiRequest<ModelImportPreviewItem[]>("/api/v1/admin/models/openrouter-preview", {
+    method: "POST",
+    body: "{}"
+  });
+}
+
+export async function importModels(payload: {
+  models: Array<{
+    providerId?: number;
+    providerSlug?: string;
+    providerName?: string;
+    slug?: string;
+    vendor?: string;
+    officialModelId: string;
+    displayName: string;
+    description?: string;
+    status?: string;
+    isHot?: boolean;
+    sortOrder?: number;
+    officialInputPriceUsd?: number;
+    officialOutputPriceUsd?: number;
+    capabilityScore?: number;
+    capabilitySource?: string;
+  }>;
+}) {
+  return apiRequest<{ createdCount: number; updatedCount: number }>("/api/v1/admin/models/import", {
+    method: "POST",
+    body: JSON.stringify(payload)
   });
 }

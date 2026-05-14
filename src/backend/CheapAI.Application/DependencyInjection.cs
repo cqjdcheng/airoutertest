@@ -6,6 +6,7 @@ using CheapAI.Application.Operations;
 using CheapAI.Application.Participation;
 using CheapAI.Application.Public;
 using CheapAI.Application.RelaySites;
+using CheapAI.Application.SiteSettings;
 
 namespace CheapAI.Application;
 
@@ -17,6 +18,7 @@ public static class DependencyInjection
         services.AddScoped<AdminAuthService>();
         services.AddScoped<RelaySiteAdminService>();
         services.AddScoped<ModelAdminService>();
+        services.AddScoped<ModelProviderAdminService>();
         services.AddScoped<OperationsAdminService>();
         services.AddScoped<PublicParticipationService>();
         services.AddScoped<AdminParticipationService>();
@@ -24,6 +26,7 @@ public static class DependencyInjection
         services.AddScoped<PublicRankingService>();
         services.AddScoped<PublicSiteDetailService>();
         services.AddScoped<PublicCatalogService>();
+        services.AddScoped<SiteSettingsService>();
         return services;
     }
 }

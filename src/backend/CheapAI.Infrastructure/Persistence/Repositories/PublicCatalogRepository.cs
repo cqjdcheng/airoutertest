@@ -1,47 +1,121 @@
 using CheapAI.Application.Common.Paging;
 using CheapAI.Application.Public;
+using CheapAI.Application.RelaySites;
 using CheapAI.Infrastructure.Persistence.Entities;
 using SqlSugar;
+using System.Text.Json;
 
 namespace CheapAI.Infrastructure.Persistence.Repositories;
 
 public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalogRepository
 {
-    public async Task<PagedResult<PublicTestRecordListItemResponse>> GetLatestTestsAsync(int page, int pageSize, CancellationToken cancellationToken = default)
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
+    public async Task<PagedResult<PublicTestRecordListItemResponse>> GetLatestTestsAsync(int page, int pageSize, string? testType = null, CancellationToken cancellationToken = default)
     {
         RefAsync<int> total = 0;
-        var rows = await db.Queryable<TestRecordEntity, RelaySiteEntity, AiModelEntity>(
+        var query = db.Queryable<TestRecordEntity, RelaySiteEntity, AiModelEntity>(
                 (record, site, model) => new JoinQueryInfos(
-                    JoinType.Inner, record.SiteId == site.Id,
-                    JoinType.Inner, record.ModelId == model.Id))
-            .Where((record, site, model) => site.DeletedAt == null && model.DeletedAt == null)
+                    JoinType.Left, record.SiteId == site.Id,
+                    JoinType.Left, record.ModelId == model.Id))
+            .Where((record, site, model) =>
+                (record.SiteId == 0 || site.DeletedAt == null) &&
+                (record.ModelId == 0 || model.DeletedAt == null));
+
+        if (!string.IsNullOrWhiteSpace(testType))
+        {
+            var normalizedType = testType.Trim();
+            query = query.Where((record, site, model) => record.TestType == normalizedType);
+        }
+
+        var rows = await query
             .OrderBy((record, site, model) => record.TestedAt, OrderByType.Desc)
-            .Select((record, site, model) => new PublicTestRecordListItemResponse
+            .Select((record, site, model) => new TestRecordQueryRow
             {
                 Id = record.Id,
                 SiteSlug = site.Slug,
                 SiteName = site.Name,
+                SiteUrl = site.BaseUrl,
+                FallbackSiteName = record.SiteName,
+                FallbackSiteUrl = record.SiteUrl,
                 ModelSlug = model.Slug,
                 ModelName = model.DisplayName,
+                FallbackModelSlug = record.ModelSlug,
+                FallbackModelName = record.ModelName,
                 TestType = record.TestType,
                 Status = record.Status,
                 FirstTokenMs = record.FirstTokenMs,
                 FullResponseMs = record.FullResponseMs,
                 ErrorMessage = record.ErrorMessage,
-                RiskScore = 0,
-                RiskLevel = "low",
+                RiskScore = record.RiskScore,
+                RiskLevel = record.RiskLevel,
+                ResultSummary = record.ResultSummary,
+                MatchScore = record.MatchScore,
+                InputTokens = record.InputTokens,
+                OutputTokens = record.OutputTokens,
+                TotalTokens = record.TotalTokens,
+                EstimatedTokens = record.EstimatedTokens,
+                TokensPerSecond = record.TokensPerSecond,
+                IsStream = record.IsStream,
+                ChecksJson = record.ChecksJson,
                 TestedAt = record.TestedAt
             })
             .ToPageListAsync(page, pageSize, total, cancellationToken);
 
-        var riskMap = await LoadRiskMapAsync(rows.Select(x => (x.SiteSlug, x.ModelSlug)).Distinct().ToList(), cancellationToken);
-        var items = rows.Select(row =>
+        var items = rows.Select(MapListItem).ToList();
+        var riskMap = await LoadRiskMapAsync(items.Select(x => (x.SiteSlug, x.ModelSlug)).Distinct().ToList(), cancellationToken);
+        items = items.Select(row =>
         {
             var risk = riskMap.GetValueOrDefault($"{row.SiteSlug}|{row.ModelSlug}");
-            return ApplyRisk(row, risk);
+            return row.RiskScore > 0 ? row : ApplyRisk(row, risk);
         }).ToList();
 
         return ToPaged(items, page, pageSize, total);
+    }
+
+    public async Task<PublicTestRecordDetailResponse?> GetTestDetailAsync(ulong id, CancellationToken cancellationToken = default)
+    {
+        var row = await db.Queryable<TestRecordEntity, RelaySiteEntity, AiModelEntity>(
+                (record, site, model) => new JoinQueryInfos(
+                    JoinType.Left, record.SiteId == site.Id,
+                    JoinType.Left, record.ModelId == model.Id))
+            .Where((record, site, model) => record.Id == id)
+            .Select((record, site, model) => new TestRecordQueryRow
+            {
+                Id = record.Id,
+                SiteSlug = site.Slug,
+                SiteName = site.Name,
+                SiteUrl = site.BaseUrl,
+                FallbackSiteName = record.SiteName,
+                FallbackSiteUrl = record.SiteUrl,
+                ModelSlug = model.Slug,
+                ModelName = model.DisplayName,
+                FallbackModelSlug = record.ModelSlug,
+                FallbackModelName = record.ModelName,
+                TestType = record.TestType,
+                Status = record.Status,
+                FirstTokenMs = record.FirstTokenMs,
+                FullResponseMs = record.FullResponseMs,
+                ErrorMessage = record.ErrorMessage,
+                RiskScore = record.RiskScore,
+                RiskLevel = record.RiskLevel,
+                ResultSummary = record.ResultSummary,
+                MatchScore = record.MatchScore,
+                InputTokens = record.InputTokens,
+                OutputTokens = record.OutputTokens,
+                TotalTokens = record.TotalTokens,
+                EstimatedTokens = record.EstimatedTokens,
+                TokensPerSecond = record.TokensPerSecond,
+                IsStream = record.IsStream,
+                ChecksJson = record.ChecksJson,
+                TestedAt = record.TestedAt
+            })
+            .FirstAsync(cancellationToken);
+
+        return row is null ? null : MapDetail(row);
     }
 
     public async Task<PagedResult<PublicRelaySiteRankingItemResponse>> GetRelaySitesAsync(int page, int pageSize, CancellationToken cancellationToken = default)
@@ -93,6 +167,7 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
     {
         var models = await db.Queryable<AiModelEntity>()
             .Where(x => x.DeletedAt == null && x.Status == "active")
+            .OrderBy(x => x.SortOrder, OrderByType.Asc)
             .OrderBy(x => x.Id, OrderByType.Desc)
             .ToListAsync(cancellationToken);
 
@@ -240,6 +315,7 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
             Id = item.Id,
             SiteSlug = item.SiteSlug,
             SiteName = item.SiteName,
+            SiteUrl = item.SiteUrl,
             ModelSlug = item.ModelSlug,
             ModelName = item.ModelName,
             TestType = item.TestType,
@@ -251,6 +327,83 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
             RiskLevel = risk?.Level ?? "low",
             TestedAt = item.TestedAt
         };
+    }
+
+    private static PublicTestRecordListItemResponse MapListItem(TestRecordQueryRow row)
+    {
+        var siteName = FirstNonEmpty(row.SiteName, row.FallbackSiteName, row.FallbackSiteUrl, "未知站点");
+        var modelName = FirstNonEmpty(row.ModelName, row.FallbackModelName, row.FallbackModelSlug, "未知模型");
+
+        return new PublicTestRecordListItemResponse
+        {
+            Id = row.Id,
+            SiteSlug = row.SiteSlug ?? string.Empty,
+            SiteName = siteName,
+            SiteUrl = FirstNonEmpty(row.SiteUrl, row.FallbackSiteUrl, null),
+            ModelSlug = FirstNonEmpty(row.ModelSlug, row.FallbackModelSlug, SlugHelper.Normalize(null, modelName)),
+            ModelName = modelName,
+            TestType = row.TestType,
+            Status = row.Status,
+            FirstTokenMs = row.FirstTokenMs,
+            FullResponseMs = row.FullResponseMs,
+            ErrorMessage = row.ErrorMessage,
+            RiskScore = row.RiskScore,
+            RiskLevel = string.IsNullOrWhiteSpace(row.RiskLevel) ? ResolveRiskLevel(row.RiskScore) : row.RiskLevel,
+            TestedAt = row.TestedAt
+        };
+    }
+
+    private static PublicTestRecordDetailResponse MapDetail(TestRecordQueryRow row)
+    {
+        var listItem = MapListItem(row);
+        return new PublicTestRecordDetailResponse
+        {
+            Id = listItem.Id,
+            SiteSlug = listItem.SiteSlug,
+            SiteName = listItem.SiteName,
+            SiteUrl = listItem.SiteUrl,
+            ModelSlug = listItem.ModelSlug,
+            ModelName = listItem.ModelName,
+            TestType = listItem.TestType,
+            Status = listItem.Status,
+            FirstTokenMs = listItem.FirstTokenMs,
+            FullResponseMs = listItem.FullResponseMs,
+            ErrorMessage = listItem.ErrorMessage,
+            RiskScore = listItem.RiskScore,
+            RiskLevel = listItem.RiskLevel,
+            TestedAt = listItem.TestedAt,
+            ResultSummary = row.ResultSummary ?? string.Empty,
+            MatchScore = row.MatchScore,
+            InputTokens = row.InputTokens,
+            OutputTokens = row.OutputTokens,
+            TotalTokens = row.TotalTokens,
+            EstimatedTokens = row.EstimatedTokens,
+            TokensPerSecond = row.TokensPerSecond,
+            IsStream = row.IsStream,
+            Checks = DeserializeChecks(row.ChecksJson)
+        };
+    }
+
+    private static IReadOnlyList<PublicTestProbeResultResponse> DeserializeChecks(string? checksJson)
+    {
+        if (string.IsNullOrWhiteSpace(checksJson))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<IReadOnlyList<PublicTestProbeResultResponse>>(checksJson, JsonOptions) ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static string FirstNonEmpty(params string?[] values)
+    {
+        return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
     }
 
     private static ModelRankingItemResponse ApplyRiskLevel(ModelRankingItemResponse item)
@@ -285,6 +438,63 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
     }
 
     private sealed record RiskSnapshot(decimal Score, string Level);
+
+    private sealed class TestRecordQueryRow
+    {
+        public ulong Id { get; init; }
+
+        public string? SiteSlug { get; init; }
+
+        public string? SiteName { get; init; }
+
+        public string? SiteUrl { get; init; }
+
+        public string? FallbackSiteName { get; init; }
+
+        public string? FallbackSiteUrl { get; init; }
+
+        public string? ModelSlug { get; init; }
+
+        public string? ModelName { get; init; }
+
+        public string? FallbackModelSlug { get; init; }
+
+        public string? FallbackModelName { get; init; }
+
+        public string TestType { get; init; } = string.Empty;
+
+        public string Status { get; init; } = string.Empty;
+
+        public int? FirstTokenMs { get; init; }
+
+        public int? FullResponseMs { get; init; }
+
+        public string? ErrorMessage { get; init; }
+
+        public decimal RiskScore { get; init; }
+
+        public string RiskLevel { get; init; } = "low";
+
+        public string? ResultSummary { get; init; }
+
+        public decimal MatchScore { get; init; }
+
+        public int? InputTokens { get; init; }
+
+        public int? OutputTokens { get; init; }
+
+        public int? TotalTokens { get; init; }
+
+        public int EstimatedTokens { get; init; }
+
+        public decimal? TokensPerSecond { get; init; }
+
+        public bool IsStream { get; init; }
+
+        public string? ChecksJson { get; init; }
+
+        public DateTime TestedAt { get; init; }
+    }
 
     private sealed class ModelSnapshotRow
     {

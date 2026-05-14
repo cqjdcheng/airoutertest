@@ -126,17 +126,18 @@ export const layout = ({ initialState, loading, setInitialState }: LayoutRuntime
     headerTitleRender: () => <Link to="/dashboard">CheapAI Admin</Link>,
     onPageChange: () => {
       const pathname = typeof window === "undefined" ? "/dashboard" : window.location.pathname;
+      const hasToken = Boolean(getAccessToken());
 
       if (loading) {
         return;
       }
 
-      if (!initialState?.currentAdmin && !isPublicRoute(pathname)) {
+      if (!initialState?.currentAdmin && !hasToken && !isPublicRoute(pathname)) {
         history.replace(LOGIN_PATH);
         return;
       }
 
-      if (initialState?.currentAdmin && isPublicRoute(pathname)) {
+      if ((initialState?.currentAdmin || hasToken) && isPublicRoute(pathname)) {
         history.replace("/dashboard");
       }
     },

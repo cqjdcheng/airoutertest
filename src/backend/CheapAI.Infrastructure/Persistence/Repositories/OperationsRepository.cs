@@ -4,6 +4,7 @@ using CheapAI.Application.Scoring;
 using CheapAI.Infrastructure.Persistence.Entities;
 using SqlSugar;
 using CheapAI.Application.Common.Exceptions;
+using System.Text.Json;
 
 namespace CheapAI.Infrastructure.Persistence.Repositories;
 
@@ -43,16 +44,23 @@ public sealed class OperationsRepository(ISqlSugarClient db) : IOperationsReposi
     public async Task<PagedResult<TestRecordListItemResponse>> GetTestRecordsAsync(OperationListQuery query, CancellationToken cancellationToken = default)
     {
         RefAsync<int> total = 0;
-        var items = await db.Queryable<TestRecordEntity, RelaySiteEntity, AiModelEntity>(
+        var rows = await db.Queryable<TestRecordEntity, RelaySiteEntity, AiModelEntity>(
                 (record, site, model) => new JoinQueryInfos(
-                    JoinType.Inner, record.SiteId == site.Id,
-                    JoinType.Inner, record.ModelId == model.Id))
+                    JoinType.Left, record.SiteId == site.Id,
+                    JoinType.Left, record.ModelId == model.Id))
+            .Where((record, site, model) =>
+                (record.SiteId == 0 || site.DeletedAt == null) &&
+                (record.ModelId == 0 || model.DeletedAt == null))
             .OrderBy((record, site, model) => record.TestedAt, OrderByType.Desc)
-            .Select((record, site, model) => new TestRecordListItemResponse
+            .Select((record, site, model) => new AdminTestRecordQueryRow
             {
                 Id = record.Id,
                 SiteName = site.Name,
+                FallbackSiteName = record.SiteName,
+                FallbackSiteUrl = record.SiteUrl,
                 ModelName = model.DisplayName,
+                FallbackModelName = record.ModelName,
+                FallbackModelSlug = record.ModelSlug,
                 TestType = record.TestType,
                 Status = record.Status,
                 FirstTokenMs = record.FirstTokenMs,
@@ -62,6 +70,7 @@ public sealed class OperationsRepository(ISqlSugarClient db) : IOperationsReposi
             })
             .ToPageListAsync(query.Page, query.PageSize, total, cancellationToken);
 
+        var items = rows.Select(MapAdminTestRecord).ToList();
         return ToPaged(items, query, total);
     }
 
@@ -257,25 +266,65 @@ public sealed class OperationsRepository(ISqlSugarClient db) : IOperationsReposi
             CreatedAt = now
         }).ExecuteReturnBigIdentityAsync();
 
-        var offers = await db.Queryable<RelayOfferEntity>()
-            .Where(x => x.Status == "active")
+        var offers = await db.Queryable<RelayOfferEntity, RelaySiteEntity, AiModelEntity>(
+                (offer, site, model) => new JoinQueryInfos(
+                    JoinType.Inner, offer.SiteId == site.Id,
+                    JoinType.Inner, offer.ModelId == model.Id))
+            .Where((offer, site, model) => offer.Status == "active" && site.DeletedAt == null && model.DeletedAt == null)
+            .Select((offer, site, model) => new PlatformTestOfferRow
+            {
+                SiteId = offer.SiteId,
+                ModelId = offer.ModelId,
+                ChannelId = offer.ChannelId,
+                SiteUrl = site.BaseUrl,
+                SiteName = site.Name,
+                ModelSlug = model.Slug,
+                ModelName = model.DisplayName
+            })
             .ToListAsync(cancellationToken);
 
         var affected = 0;
         foreach (var offer in offers)
         {
+            const string resultSummary = "平台统一测试样本通过。";
+            var checksJson = JsonSerializer.Serialize(new[]
+            {
+                new
+                {
+                    code = "D1",
+                    name = "协议连通性",
+                    category = "协议",
+                    status = "pass",
+                    confidence = "medium",
+                    scoreImpact = 15,
+                    riskImpact = 0,
+                    evidence = "平台周期测试样本生成成功。"
+                }
+            });
+
             await db.Insertable(new TestRecordEntity
             {
                 SiteId = offer.SiteId,
                 ModelId = offer.ModelId,
                 ChannelId = offer.ChannelId,
+                SiteUrl = offer.SiteUrl,
+                SiteName = offer.SiteName,
+                ModelSlug = offer.ModelSlug,
+                ModelName = offer.ModelName,
                 TestType = "platform",
+                IsStream = true,
                 Status = "success",
                 FirstTokenMs = 820,
                 FullResponseMs = 2460,
                 PromptHash = "local-p0-seed",
                 ResponseHash = $"ok-{offer.SiteId}-{offer.ModelId}",
                 DetectedModelId = null,
+                RiskScore = 14,
+                RiskLevel = "low",
+                ResultSummary = resultSummary,
+                MatchScore = 92,
+                EstimatedTokens = 1000,
+                ChecksJson = checksJson,
                 TestedAt = now,
                 CreatedAt = now
             }).ExecuteCommandAsync(cancellationToken);
@@ -301,17 +350,34 @@ public sealed class OperationsRepository(ISqlSugarClient db) : IOperationsReposi
         var affected = 0;
         foreach (var record in latestRecords)
         {
-            var riskScore = RiskScoreCalculator.ResolveRiskScore(record.Status, record.FirstTokenMs, record.FullResponseMs);
+            if (record.SiteId == 0 || record.ModelId == 0)
+            {
+                continue;
+            }
+
+            var riskScore = record.RiskScore > 0
+                ? record.RiskScore
+                : RiskScoreCalculator.ResolveRiskScore(record.Status, record.FirstTokenMs, record.FullResponseMs);
             var entity = new RiskEvidenceEntity
             {
                 SiteId = record.SiteId,
                 ModelId = record.ModelId,
                 TestRecordId = record.Id,
-                RuleCode = "basic_platform_signal",
-                RiskLevel = RiskScoreCalculator.ResolveRiskLevel(riskScore),
+                RuleCode = "unified_test_signal",
+                RiskLevel = string.IsNullOrWhiteSpace(record.RiskLevel) ? RiskScoreCalculator.ResolveRiskLevel(riskScore) : record.RiskLevel,
                 RiskScore = riskScore,
-                EvidenceSummary = "基于平台测试状态、首 token 耗时和完整响应耗时生成的基础风险证据。",
-                EvidenceJson = $"{{\"status\":\"{record.Status}\",\"firstTokenMs\":{record.FirstTokenMs ?? 0},\"fullResponseMs\":{record.FullResponseMs ?? 0}}}",
+                EvidenceSummary = record.ResultSummary ?? "基于统一测试状态、首 token 耗时和完整响应耗时生成的基础风险证据。",
+                EvidenceJson = JsonSerializer.Serialize(new
+                {
+                    record.Status,
+                    record.TestType,
+                    record.FirstTokenMs,
+                    record.FullResponseMs,
+                    record.MatchScore,
+                    record.InputTokens,
+                    record.OutputTokens,
+                    record.TotalTokens
+                }),
                 ReviewStatus = "pending",
                 CreatedAt = now,
                 UpdatedAt = now
@@ -369,7 +435,7 @@ public sealed class OperationsRepository(ISqlSugarClient db) : IOperationsReposi
         foreach (var offer in offers)
         {
             var tests = await db.Queryable<TestRecordEntity>()
-                .Where(x => x.SiteId == offer.SiteId && x.ModelId == offer.ModelId && x.TestType == "platform")
+                .Where(x => x.SiteId == offer.SiteId && x.ModelId == offer.ModelId)
                 .OrderBy(x => x.TestedAt, OrderByType.Desc)
                 .Take(20)
                 .ToListAsync(cancellationToken);
@@ -513,6 +579,56 @@ public sealed class OperationsRepository(ISqlSugarClient db) : IOperationsReposi
         };
     }
 
+    private static TestRecordListItemResponse MapAdminTestRecord(AdminTestRecordQueryRow row)
+    {
+        return new TestRecordListItemResponse
+        {
+            Id = row.Id,
+            SiteName = FirstNonEmpty(row.SiteName, row.FallbackSiteName, row.FallbackSiteUrl, "未知站点"),
+            ModelName = FirstNonEmpty(row.ModelName, row.FallbackModelName, row.FallbackModelSlug, "未知模型"),
+            TestType = row.TestType,
+            Status = row.Status,
+            FirstTokenMs = row.FirstTokenMs,
+            FullResponseMs = row.FullResponseMs,
+            ErrorMessage = row.ErrorMessage,
+            TestedAt = row.TestedAt
+        };
+    }
+
+    private static string FirstNonEmpty(params string?[] values)
+    {
+        return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
+    }
+
+    private sealed class AdminTestRecordQueryRow
+    {
+        public ulong Id { get; init; }
+
+        public string? SiteName { get; init; }
+
+        public string? FallbackSiteName { get; init; }
+
+        public string? FallbackSiteUrl { get; init; }
+
+        public string? ModelName { get; init; }
+
+        public string? FallbackModelName { get; init; }
+
+        public string? FallbackModelSlug { get; init; }
+
+        public string TestType { get; init; } = string.Empty;
+
+        public string Status { get; init; } = string.Empty;
+
+        public int? FirstTokenMs { get; init; }
+
+        public int? FullResponseMs { get; init; }
+
+        public string? ErrorMessage { get; init; }
+
+        public DateTime TestedAt { get; init; }
+    }
+
     private sealed class RankingBuildRow
     {
         public ulong SiteId { get; init; }
@@ -534,5 +650,22 @@ public sealed class OperationsRepository(ISqlSugarClient db) : IOperationsReposi
         public decimal FinalScore { get; init; }
 
         public decimal PriceSort { get; init; }
+    }
+
+    private sealed class PlatformTestOfferRow
+    {
+        public ulong SiteId { get; init; }
+
+        public ulong ModelId { get; init; }
+
+        public ulong? ChannelId { get; init; }
+
+        public string SiteUrl { get; init; } = string.Empty;
+
+        public string SiteName { get; init; } = string.Empty;
+
+        public string ModelSlug { get; init; } = string.Empty;
+
+        public string ModelName { get; init; } = string.Empty;
     }
 }

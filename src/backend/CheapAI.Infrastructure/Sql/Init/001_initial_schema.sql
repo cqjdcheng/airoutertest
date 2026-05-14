@@ -72,14 +72,33 @@ CREATE TABLE IF NOT EXISTS site_channels (
   KEY idx_site_channels_site_id (site_id)
 );
 --//@
+CREATE TABLE IF NOT EXISTS model_providers (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  slug VARCHAR(64) NOT NULL,
+  name VARCHAR(128) NOT NULL,
+  website_url VARCHAR(255) NULL,
+  description TEXT NULL,
+  status VARCHAR(24) NOT NULL DEFAULT 'active',
+  sort_order INT NOT NULL DEFAULT 1000,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  deleted_at DATETIME(3) NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_model_providers_slug (slug),
+  KEY idx_model_providers_status_sort (status, sort_order)
+);
+--//@
 CREATE TABLE IF NOT EXISTS models (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  provider_id BIGINT UNSIGNED NULL,
   slug VARCHAR(128) NOT NULL,
   vendor VARCHAR(64) NOT NULL,
   official_model_id VARCHAR(128) NOT NULL,
   display_name VARCHAR(128) NOT NULL,
   description TEXT NULL,
   status VARCHAR(24) NOT NULL DEFAULT 'active',
+  is_hot TINYINT(1) NOT NULL DEFAULT 0,
+  sort_order INT NOT NULL DEFAULT 1000,
   official_input_price_usd DECIMAL(18, 6) NULL,
   official_output_price_usd DECIMAL(18, 6) NULL,
   capability_score DECIMAL(10, 4) NULL,
@@ -90,7 +109,8 @@ CREATE TABLE IF NOT EXISTS models (
   deleted_at DATETIME(3) NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uk_models_slug (slug),
-  UNIQUE KEY uk_models_vendor_official_id (vendor, official_model_id)
+  UNIQUE KEY uk_models_vendor_official_id (vendor, official_model_id),
+  KEY idx_models_provider_id (provider_id)
 );
 --//@
 CREATE TABLE IF NOT EXISTS model_ranking_snapshots (
@@ -143,7 +163,12 @@ CREATE TABLE IF NOT EXISTS test_records (
   site_id BIGINT UNSIGNED NOT NULL,
   model_id BIGINT UNSIGNED NOT NULL,
   channel_id BIGINT UNSIGNED NULL,
+  site_url VARCHAR(255) NULL,
+  site_name VARCHAR(128) NULL,
+  model_slug VARCHAR(128) NULL,
+  model_name VARCHAR(128) NULL,
   test_type VARCHAR(24) NOT NULL DEFAULT 'platform',
+  is_stream TINYINT(1) NOT NULL DEFAULT 1,
   status VARCHAR(24) NOT NULL,
   first_token_ms INT NULL,
   full_response_ms INT NULL,
@@ -152,11 +177,23 @@ CREATE TABLE IF NOT EXISTS test_records (
   prompt_hash CHAR(64) NULL,
   response_hash CHAR(64) NULL,
   detected_model_id VARCHAR(128) NULL,
+  risk_score DECIMAL(10, 4) NOT NULL DEFAULT 0,
+  risk_level VARCHAR(24) NOT NULL DEFAULT 'low',
+  result_summary VARCHAR(512) NULL,
+  match_score DECIMAL(10, 4) NOT NULL DEFAULT 0,
+  input_tokens INT NULL,
+  output_tokens INT NULL,
+  total_tokens INT NULL,
+  estimated_tokens INT NOT NULL DEFAULT 1000,
+  tokens_per_second DECIMAL(10, 2) NULL,
+  checks_json JSON NULL,
+  self_test_id CHAR(36) NULL,
   tested_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (id),
   KEY idx_test_records_site_model_time (site_id, model_id, tested_at),
-  KEY idx_test_records_type_status (test_type, status)
+  KEY idx_test_records_type_status (test_type, status),
+  KEY idx_test_records_self_test_id (self_test_id)
 );
 --//@
 CREATE TABLE IF NOT EXISTS risk_evidences (
@@ -316,6 +353,29 @@ CREATE TABLE IF NOT EXISTS articles (
   KEY idx_articles_status_published_at (status, published_at)
 );
 --//@
+CREATE TABLE IF NOT EXISTS site_settings (
+  id TINYINT UNSIGNED NOT NULL,
+  site_name VARCHAR(64) NOT NULL,
+  site_icon_url VARCHAR(512) NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  updated_by BIGINT UNSIGNED NULL,
+  PRIMARY KEY (id)
+);
+--//@
+INSERT INTO site_settings (
+  id,
+  site_name,
+  site_icon_url
+)
+SELECT
+  1,
+  'CheapAI',
+  NULL
+WHERE NOT EXISTS (
+  SELECT 1 FROM site_settings WHERE id = 1
+);
+--//@
 INSERT INTO relay_sites (
   slug,
   name,
@@ -347,23 +407,48 @@ WHERE NOT EXISTS (
   SELECT 1 FROM relay_sites WHERE slug = 'relay-port'
 );
 --//@
+INSERT INTO model_providers (
+  slug,
+  name,
+  website_url,
+  description,
+  status,
+  sort_order
+)
+SELECT
+  'openai',
+  'OpenAI',
+  'https://openai.com',
+  'OpenAI 官方模型提供商',
+  'active',
+  10
+WHERE NOT EXISTS (
+  SELECT 1 FROM model_providers WHERE slug = 'openai'
+);
+--//@
 INSERT INTO models (
+  provider_id,
   slug,
   vendor,
   official_model_id,
   display_name,
   description,
   status,
+  is_hot,
+  sort_order,
   official_input_price_usd,
   official_output_price_usd
 )
 SELECT
+  (SELECT id FROM model_providers WHERE slug = 'openai' LIMIT 1),
   'gpt-4-1-mini',
   'OpenAI',
   'gpt-4.1-mini',
   'GPT-4.1 mini',
   '本地预览示例模型',
   'active',
+  1,
+  10,
   0.40,
   1.60
 WHERE NOT EXISTS (

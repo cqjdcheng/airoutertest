@@ -9,5 +9,6 @@ public sealed class CreateRelaySiteRequestValidator : AbstractValidator<CreateRe
         RuleFor(x => x.Name).NotEmpty().MaximumLength(128);
         RuleFor(x => x.BaseUrl).NotEmpty().MaximumLength(255);
         RuleFor(x => x.Slug).MaximumLength(128);
+        RuleForEach(x => x.Offers).SetValidator(new RelaySiteOfferUpsertRequestValidator());
     }
 }

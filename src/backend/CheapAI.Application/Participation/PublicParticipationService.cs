@@ -15,7 +15,7 @@ public sealed class PublicParticipationService(
 
     public async Task<SelfTestResponse> CreateSelfTestAsync(CreateSelfTestRequest request, CancellationToken cancellationToken = default)
     {
-        if (!selfTestChallengeService.VerifyAndConsume(request.ChallengeId, request.ChallengeAnswer))
+        if (!await selfTestChallengeService.VerifyAndConsumeAsync(request.ChallengeId, request.ChallengeAnswer, cancellationToken))
         {
             throw new AppUnauthorizedException("Human verification failed or expired.");
         }

@@ -17,8 +17,23 @@ public sealed class TestRecordEntity
     [SugarColumn(ColumnName = "channel_id", IsNullable = true)]
     public ulong? ChannelId { get; set; }
 
+    [SugarColumn(ColumnName = "site_url", IsNullable = true)]
+    public string? SiteUrl { get; set; }
+
+    [SugarColumn(ColumnName = "site_name", IsNullable = true)]
+    public string? SiteName { get; set; }
+
+    [SugarColumn(ColumnName = "model_slug", IsNullable = true)]
+    public string? ModelSlug { get; set; }
+
+    [SugarColumn(ColumnName = "model_name", IsNullable = true)]
+    public string? ModelName { get; set; }
+
     [SugarColumn(ColumnName = "test_type")]
     public string TestType { get; set; } = "platform";
+
+    [SugarColumn(ColumnName = "is_stream")]
+    public bool IsStream { get; set; } = true;
 
     [SugarColumn(ColumnName = "status")]
     public string Status { get; set; } = "success";
@@ -43,6 +58,39 @@ public sealed class TestRecordEntity
 
     [SugarColumn(ColumnName = "detected_model_id", IsNullable = true)]
     public string? DetectedModelId { get; set; }
+
+    [SugarColumn(ColumnName = "risk_score")]
+    public decimal RiskScore { get; set; }
+
+    [SugarColumn(ColumnName = "risk_level")]
+    public string RiskLevel { get; set; } = "low";
+
+    [SugarColumn(ColumnName = "result_summary", IsNullable = true)]
+    public string? ResultSummary { get; set; }
+
+    [SugarColumn(ColumnName = "match_score")]
+    public decimal MatchScore { get; set; }
+
+    [SugarColumn(ColumnName = "input_tokens", IsNullable = true)]
+    public int? InputTokens { get; set; }
+
+    [SugarColumn(ColumnName = "output_tokens", IsNullable = true)]
+    public int? OutputTokens { get; set; }
+
+    [SugarColumn(ColumnName = "total_tokens", IsNullable = true)]
+    public int? TotalTokens { get; set; }
+
+    [SugarColumn(ColumnName = "estimated_tokens")]
+    public int EstimatedTokens { get; set; } = 1000;
+
+    [SugarColumn(ColumnName = "tokens_per_second", IsNullable = true)]
+    public decimal? TokensPerSecond { get; set; }
+
+    [SugarColumn(ColumnName = "checks_json", IsNullable = true)]
+    public string? ChecksJson { get; set; }
+
+    [SugarColumn(ColumnName = "self_test_id", IsNullable = true)]
+    public string? SelfTestId { get; set; }
 
     [SugarColumn(ColumnName = "tested_at")]
     public DateTime TestedAt { get; set; }

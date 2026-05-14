@@ -32,6 +32,7 @@ export default defineConfig({
       component: "@/pages/Dashboard"
     },
     {
+      key: "master-data",
       name: "主数据",
       icon: "Database",
       routes: [
@@ -41,9 +42,20 @@ export default defineConfig({
           component: "@/pages/sites"
         },
         {
+          path: "/sites/:id",
+          name: "站点详情",
+          hideInMenu: true,
+          component: "@/pages/sites/detail"
+        },
+        {
           path: "/models",
           name: "模型目录",
           component: "@/pages/models"
+        },
+        {
+          path: "/model-providers",
+          name: "模型提供商",
+          component: "@/pages/model-providers"
         },
         {
           path: "/offers",
@@ -53,6 +65,7 @@ export default defineConfig({
       ]
     },
     {
+      key: "operations",
       name: "运营与风控",
       icon: "Block",
       routes: [
@@ -74,7 +87,8 @@ export default defineConfig({
       ]
     },
     {
-      name: "内容与审核",
+      key: "content",
+      name: "内容与配置",
       icon: "Read",
       routes: [
         {
@@ -86,6 +100,12 @@ export default defineConfig({
           path: "/articles",
           name: "文章管理",
           component: "@/pages/articles"
+        },
+        {
+          path: "/settings",
+          name: "站点设置",
+          icon: "Setting",
+          component: "@/pages/settings"
         }
       ]
     }

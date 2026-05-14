@@ -23,4 +23,6 @@ public class CreateRelaySiteRequest
     public string? InviteUrl { get; init; }
 
     public string? RecentReview { get; init; }
+
+    public IReadOnlyList<RelaySiteOfferUpsertRequest> Offers { get; init; } = [];
 }

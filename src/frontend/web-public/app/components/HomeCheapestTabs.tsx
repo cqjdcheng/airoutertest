@@ -26,79 +26,74 @@ export function HomeCheapestTabs({ groups }: { groups: CheapestRankingGroup[] })
   const activeGroup = groups.find((group) => group.modelSlug === activeSlug) ?? groups[0];
 
   return (
-    <section className="data-table">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--line)] px-5 py-4">
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight">主流模型最便宜中转排行</h2>
-          <p className="mt-1 text-sm text-[var(--text-secondary)]">按实际折算价排序，可切换主流模型查看中转站。</p>
-        </div>
-        <div className="flex max-w-full gap-2 overflow-x-auto">
-          {groups.map((group) => (
-            <button
-              className="secondary-button"
-              data-active={group.modelSlug === activeSlug}
-              key={group.modelSlug}
-              onClick={() => setActiveSlug(group.modelSlug)}
-              type="button"
-            >
-              {group.modelSlug}
-            </button>
-          ))}
-        </div>
+    <section className="market-panel">
+      <div className="market-panel__tabs">
+        {groups.map((group) => (
+          <button
+            className="secondary-button"
+            data-active={group.modelSlug === activeSlug}
+            key={group.modelSlug}
+            onClick={() => setActiveSlug(group.modelSlug)}
+            type="button"
+          >
+            {group.modelSlug}
+          </button>
+        ))}
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="recommend-table">
-          <thead>
-            <tr>
-              <th>中转站</th>
-              <th>价格</th>
-              <th>稳定性</th>
-              <th>风险</th>
-              <th>企业属性</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {activeGroup?.items.length ? (
-              activeGroup.items.map((item) => (
-                <tr key={`${activeGroup.modelSlug}-${item.siteSlug}`}>
-                  <td>
-                    <strong>{item.siteName}</strong>
+      <div className="market-list">
+        {activeGroup?.items.length ? (
+          activeGroup.items.map((item, index) => {
+            const enterpriseBadges = [
+              item.supportsInvoice ? "开票" : null,
+              item.supportsRefund ? "退款" : null,
+              item.hasDocs ? "文档" : null
+            ].filter(Boolean);
+
+            return (
+              <article className="market-row" key={`${activeGroup.modelSlug}-${item.siteSlug}`}>
+                <span className="market-row__rank">#{index + 1}</span>
+
+                <div className="market-row__body">
+                  <h3>{item.siteName}</h3>
+                  <p>
+                    24h 可用 {percent(item.availability24h)}，7d 稳定 {percent(item.stability7d)}，风险分 {score(item.riskScore)}。
+                  </p>
+                  <div className="market-row__meta">
                     <span>{item.siteSlug}</span>
-                  </td>
-                  <td>
-                    {money(item.effectiveInputPriceUsd)} / {money(item.effectiveOutputPriceUsd)}
-                  </td>
-                  <td>
-                    24h {percent(item.availability24h)}
-                    <span>7d {percent(item.stability7d)}</span>
-                  </td>
-                  <td>
                     <span className="status-pill" data-tone={riskTone(item.riskLevel)}>
                       {riskLabel(item.riskLevel)}
                     </span>
-                    <span>风险分 {score(item.riskScore)}</span>
-                  </td>
-                  <td>
-                    {[item.supportsInvoice ? "开票" : null, item.supportsRefund ? "退款" : null, item.hasDocs ? "文档" : null]
-                      .filter(Boolean)
-                      .join(" / ") || "-"}
-                  </td>
-                  <td>
-                    <Link href={`/sites/${item.siteSlug}`} className="text-button">
-                      详情
-                    </Link>
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={6}>暂无价格快照，请先运行后台排行重建。</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                  </div>
+                  {enterpriseBadges.length ? (
+                    <div className="market-row__badges">
+                      {enterpriseBadges.map((badge) => (
+                        <span className="status-pill" data-tone="neutral" key={badge}>
+                          {badge}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="market-row__price">
+                  <strong>
+                    {money(item.effectiveInputPriceUsd)} / {money(item.effectiveOutputPriceUsd)}
+                  </strong>
+                  <span>输入价 / 输出价</span>
+                </div>
+
+                <div className="market-row__cta">
+                  <Link href={`/sites/${item.siteSlug}`} className="secondary-button">
+                    查看站点
+                  </Link>
+                </div>
+              </article>
+            );
+          })
+        ) : (
+          <div className="empty-state">暂无价格快照，请先运行后台排行重建。</div>
+        )}
       </div>
     </section>
   );
