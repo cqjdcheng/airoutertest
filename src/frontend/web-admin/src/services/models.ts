@@ -7,6 +7,8 @@ export type ModelListItem = {
   slug: string;
   vendor: string;
   officialModelId: string;
+  requestName: string;
+  apiType: "openai" | "anthropic";
   displayName: string;
   status: string;
   isHot: boolean;
@@ -37,6 +39,8 @@ export async function createModel(payload: {
   slug?: string;
   vendor?: string;
   officialModelId: string;
+  requestName: string;
+  apiType?: "openai" | "anthropic";
   displayName: string;
   description?: string;
   status?: string;
@@ -62,6 +66,8 @@ export async function updateModel(id: number, payload: {
   slug?: string;
   vendor?: string;
   officialModelId: string;
+  requestName: string;
+  apiType?: "openai" | "anthropic";
   displayName: string;
   description?: string;
   status?: string;
@@ -85,11 +91,23 @@ export async function updateModelStatus(id: number, status: string) {
   });
 }
 
+export async function updateModelMetadata(id: number, payload: {
+  isHot: boolean;
+  sortOrder: number;
+}) {
+  return apiRequest<void>(`/api/v1/admin/models/${id}/metadata`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
 export type ModelImportPreviewItem = {
   providerSlug: string;
   providerName: string;
   vendor: string;
   officialModelId: string;
+  requestName: string;
+  apiType: "openai" | "anthropic";
   displayName: string;
   description?: string;
   officialInputPriceUsd?: number;
@@ -124,6 +142,8 @@ export async function importModels(payload: {
     slug?: string;
     vendor?: string;
     officialModelId: string;
+    requestName: string;
+    apiType?: "openai" | "anthropic";
     displayName: string;
     description?: string;
     status?: string;

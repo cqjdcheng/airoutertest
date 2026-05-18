@@ -26,45 +26,47 @@ export default async function CapabilitiesPage() {
           eyebrow="Model Capability"
           title="模型能力榜"
           description="能力榜引用第三方公开来源，仅作为价格、稳定性和风险判断之外的参考口径，不参与 CheapAI 的综合评分。"
-          aside={
-            <>
-              <div className="metric-card">
-                <span>收录条目</span>
-                <strong>{items.length}</strong>
-              </div>
-              <div className="metric-card mt-3">
-                <span>用途定位</span>
-                <strong>辅助参考</strong>
-              </div>
-            </>
-          }
+         
         />
 
         <section className="data-table">
-          {items.length > 0 ? (
-            <div className="divide-y divide-[var(--line)]">
-              {items.map((item) => (
-                <div key={`${item.source}-${item.modelSlug}`} className="grid gap-4 px-5 py-5 text-sm md:grid-cols-[80px_1fr_1fr_160px] md:items-center">
-                  <div className="text-3xl font-semibold tracking-tight">#{item.rankPosition}</div>
-                  <div>
-                    <div className="font-semibold">{item.modelName}</div>
-                    <div className="mt-1 text-[var(--text-secondary)]">{item.modelSlug}</div>
-                  </div>
-                  <div>
-                    <div className="text-[var(--text-secondary)]">来源</div>
-                    <div className="mt-1 font-medium">{item.source}</div>
-                  </div>
-                  <div>
-                    <div className="text-[var(--text-secondary)]">能力分</div>
-                    <div className="mt-1 text-xl font-semibold">{item.capabilityScore}</div>
-                  </div>
-                  <div className="text-[var(--text-secondary)] md:col-start-2 md:col-span-3">快照：{formatDateTime(item.snapshotAt)}</div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="p-6 text-sm text-[var(--text-secondary)]">暂无能力榜数据。</div>
-          )}
+          <div className="overflow-x-auto">
+            <table className="recommend-table">
+              <thead>
+                <tr>
+                  <th>排名</th>
+                  <th>模型</th>
+                  <th>来源</th>
+                  <th>能力分</th>
+                  <th>快照时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.length > 0 ? (
+                  items.map((item) => (
+                    <tr key={`${item.source}-${item.modelSlug}`}>
+                      <td>
+                        <strong>#{item.rankPosition}</strong>
+                      </td>
+                      <td>
+                        <strong>{item.modelName}</strong>
+                        <span>{item.modelSlug}</span>
+                      </td>
+                      <td>{item.source}</td>
+                      <td>
+                        <strong>{item.capabilityScore}</strong>
+                      </td>
+                      <td>{formatDateTime(item.snapshotAt)}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5}>暂无能力榜数据。</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </section>
       </section>
     </main>

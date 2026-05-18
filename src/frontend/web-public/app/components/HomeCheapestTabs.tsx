@@ -6,6 +6,7 @@ import { money, percent, riskLabel, riskTone, score } from "@/lib/format";
 
 export type CheapestRankingGroup = {
   modelSlug: string;
+  modelName?: string;
   items: Array<{
     siteSlug: string;
     siteName: string;
@@ -36,64 +37,66 @@ export function HomeCheapestTabs({ groups }: { groups: CheapestRankingGroup[] })
             onClick={() => setActiveSlug(group.modelSlug)}
             type="button"
           >
-            {group.modelSlug}
+            {group.modelName || group.modelSlug}
           </button>
         ))}
       </div>
 
-      <div className="market-list">
-        {activeGroup?.items.length ? (
-          activeGroup.items.map((item, index) => {
-            const enterpriseBadges = [
-              item.supportsInvoice ? "开票" : null,
-              item.supportsRefund ? "退款" : null,
-              item.hasDocs ? "文档" : null
-            ].filter(Boolean);
+      <div className="market-table-shell overflow-x-auto">
+        <table className="recommend-table home-ranking-table">
+          <thead>
+            <tr>
+              <th>站点</th>
+              <th>中转价（USD/M）</th>
+              <th>稳定 / 风险</th>
+              <th>特点</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {activeGroup?.items.length ? (
+              activeGroup.items.map((item, index) => {
+                const enterpriseBadges = [
+                  item.supportsInvoice ? "开票" : null,
+                  item.supportsRefund ? "退款" : null,
+                  item.hasDocs ? "文档" : null
+                ].filter((badge): badge is string => Boolean(badge));
 
-            return (
-              <article className="market-row" key={`${activeGroup.modelSlug}-${item.siteSlug}`}>
-                <span className="market-row__rank">#{index + 1}</span>
-
-                <div className="market-row__body">
-                  <h3>{item.siteName}</h3>
-                  <p>
-                    24h 可用 {percent(item.availability24h)}，7d 稳定 {percent(item.stability7d)}，风险分 {score(item.riskScore)}。
-                  </p>
-                  <div className="market-row__meta">
-                    <span>{item.siteSlug}</span>
-                    <span className="status-pill" data-tone={riskTone(item.riskLevel)}>
-                      {riskLabel(item.riskLevel)}
-                    </span>
-                  </div>
-                  {enterpriseBadges.length ? (
-                    <div className="market-row__badges">
-                      {enterpriseBadges.map((badge) => (
-                        <span className="status-pill" data-tone="neutral" key={badge}>
-                          {badge}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="market-row__price">
-                  <strong>
-                    {money(item.effectiveInputPriceUsd)} / {money(item.effectiveOutputPriceUsd)}
-                  </strong>
-                  <span>输入价 / 输出价</span>
-                </div>
-
-                <div className="market-row__cta">
-                  <Link href={`/sites/${item.siteSlug}`} className="secondary-button">
-                    查看站点
-                  </Link>
-                </div>
-              </article>
-            );
-          })
-        ) : (
-          <div className="empty-state">暂无价格快照，请先运行后台排行重建。</div>
-        )}
+                return (
+                  <tr key={`${activeGroup.modelSlug}-${item.siteSlug}`}>
+                    <td>
+                      <strong>#{index + 1} {item.siteName}</strong>
+                      <span>{item.siteSlug}</span>
+                    </td>
+                    <td>
+                      <strong>{money(item.effectiveInputPriceUsd)} / {money(item.effectiveOutputPriceUsd)}</strong>
+                      <span>输入 / 输出</span>
+                    </td>
+                    <td>
+                      {/* <span>可用 {percent(item.availability24h)}</span>
+                      <span>稳定 {percent(item.stability7d)}</span> */}
+                      <span className="status-pill" data-tone={riskTone(item.riskLevel)}>
+                        {riskLabel(item.riskLevel)} {score(item.riskScore)}
+                      </span>
+                    </td>
+                    <td>
+                      {enterpriseBadges.length ? enterpriseBadges.join(" / ") : "-"}
+                    </td>
+                    <td>
+                      <Link href={`/sites/${item.siteSlug}`} className="text-button">
+                        查看站点
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })
+            ) : (
+              <tr>
+                <td colSpan={5}>暂无价格快照，请先运行后台排行重建。</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </section>
   );

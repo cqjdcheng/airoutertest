@@ -13,6 +13,8 @@ import {
 export type ModelOption = {
   label: string;
   slug: string;
+  requestName?: string;
+  apiType?: "openai" | "anthropic";
   badge?: string;
 };
 
@@ -74,11 +76,11 @@ declare global {
 const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "1x00000000000000000000AA";
 
 const fallbackModelOptions: ModelOption[] = [
-  { label: "GPT 5.5", slug: "gpt-5.5", badge: "HOT" },
-  { label: "GPT 5.4", slug: "gpt-5.4" },
-  { label: "Claude Code 4.7", slug: "claude-code-4.7" },
-  { label: "Claude Code 4.6", slug: "claude-code-4.6" },
-  { label: "Gemini 3.1", slug: "gemini-3.1-pro" }
+  { label: "GPT 5.5", slug: "gpt-5.5", requestName: "gpt-5.5", apiType: "openai", badge: "HOT" },
+  { label: "GPT 5.4", slug: "gpt-5.4", requestName: "gpt-5.4", apiType: "openai" },
+  { label: "Claude Code 4.7", slug: "claude-code-4.7", requestName: "claude-code-4.7", apiType: "anthropic" },
+  { label: "Claude Code 4.6", slug: "claude-code-4.6", requestName: "claude-code-4.6", apiType: "anthropic" },
+  { label: "Gemini 3.1", slug: "gemini-3.1-pro", requestName: "gemini-3.1-pro", apiType: "openai" }
 ];
 
 const methodItems = [
@@ -92,12 +94,14 @@ export function RelayTestPanel({
   initialModel,
   compact = false,
   showHistory,
-  modelOptions
+  modelOptions,
+  onTestCompleted
 }: {
   initialModel?: string;
   compact?: boolean;
   showHistory?: boolean;
   modelOptions?: ModelOption[];
+  onTestCompleted?: () => void;
 }) {
   const resolvedModelOptions = modelOptions?.length ? modelOptions : fallbackModelOptions;
   const initialModelSlug = initialModel ?? resolvedModelOptions[0]?.slug ?? "gpt-5.5";
@@ -122,7 +126,7 @@ export function RelayTestPanel({
   const turnstileContainerRef = useRef<HTMLDivElement>(null);
   const turnstileWidgetIdRef = useRef<string | null>(null);
 
-  const targetModel = customModel.trim() || selectedModel.label;
+  const targetModel = customModel.trim() || selectedModel.requestName || selectedModel.slug;
   const targetModelLabel = customModel.trim() || selectedModel.label;
 
   useEffect(() => {
@@ -247,6 +251,7 @@ export function RelayTestPanel({
         fullResponseMs: response.data.fullResponseMs,
         testedAt: response.data.createdAt
       });
+      onTestCompleted?.();
     } else {
       setError("测试请求失败，请检查站点地址、模型名、API Key 或安全校验状态。");
     }
@@ -263,7 +268,7 @@ export function RelayTestPanel({
         <div className="scan-card__header">
           <div>
             <p className="eyebrow">接口测试</p>
-            <h2>填写接口信息</h2>
+            <h2>直接测试中转接口</h2>
           </div>
           <div className="relay-panel-actions">
             <button className="help-icon-button" aria-label="查看检测手段" onClick={() => setMethodsOpen(true)} type="button">

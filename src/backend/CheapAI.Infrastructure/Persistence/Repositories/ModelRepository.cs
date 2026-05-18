@@ -53,6 +53,8 @@ public sealed class ModelRepository(ISqlSugarClient db) : IModelRepository
                 Slug = model.Slug,
                 Vendor = model.Vendor,
                 OfficialModelId = model.OfficialModelId,
+                RequestName = model.RequestName,
+                ApiType = model.ApiType,
                 DisplayName = model.DisplayName,
                 Description = model.Description,
                 Status = model.Status,
@@ -82,6 +84,8 @@ public sealed class ModelRepository(ISqlSugarClient db) : IModelRepository
                 Slug = model.Slug,
                 Vendor = model.Vendor,
                 OfficialModelId = model.OfficialModelId,
+                RequestName = model.RequestName,
+                ApiType = model.ApiType,
                 DisplayName = model.DisplayName,
                 Status = model.Status,
                 IsHot = model.IsHot,
@@ -111,6 +115,8 @@ public sealed class ModelRepository(ISqlSugarClient db) : IModelRepository
                 Slug = model.Slug,
                 Vendor = model.Vendor,
                 OfficialModelId = model.OfficialModelId,
+                RequestName = model.RequestName,
+                ApiType = model.ApiType,
                 DisplayName = model.DisplayName,
                 Description = model.Description,
                 Status = model.Status,
@@ -139,6 +145,8 @@ public sealed class ModelRepository(ISqlSugarClient db) : IModelRepository
                 model.Slug.Contains(query.Keyword!) ||
                 model.DisplayName.Contains(query.Keyword!) ||
                 model.OfficialModelId.Contains(query.Keyword!) ||
+                model.RequestName.Contains(query.Keyword!) ||
+                model.ApiType.Contains(query.Keyword!) ||
                 model.Vendor.Contains(query.Keyword!) ||
                 provider.Name.Contains(query.Keyword!));
         }
@@ -160,6 +168,8 @@ public sealed class ModelRepository(ISqlSugarClient db) : IModelRepository
                 Slug = model.Slug,
                 Vendor = model.Vendor,
                 OfficialModelId = model.OfficialModelId,
+                RequestName = model.RequestName,
+                ApiType = model.ApiType,
                 DisplayName = model.DisplayName,
                 Status = model.Status,
                 IsHot = model.IsHot,
@@ -189,6 +199,8 @@ public sealed class ModelRepository(ISqlSugarClient db) : IModelRepository
             Slug = request.Slug,
             Vendor = request.Vendor,
             OfficialModelId = request.OfficialModelId,
+            RequestName = request.RequestName,
+            ApiType = request.ApiType,
             DisplayName = request.DisplayName,
             Description = request.Description,
             Status = request.Status,
@@ -215,6 +227,8 @@ public sealed class ModelRepository(ISqlSugarClient db) : IModelRepository
                 Slug = request.Slug,
                 Vendor = request.Vendor,
                 OfficialModelId = request.OfficialModelId,
+                RequestName = request.RequestName,
+                ApiType = request.ApiType,
                 DisplayName = request.DisplayName,
                 Description = request.Description,
                 Status = request.Status,
@@ -243,6 +257,19 @@ public sealed class ModelRepository(ISqlSugarClient db) : IModelRepository
             .ExecuteCommandAsync(cancellationToken);
     }
 
+    public Task UpdateMetadataAsync(ulong id, UpdateModelMetadataRequest request, CancellationToken cancellationToken = default)
+    {
+        return db.Updateable<AiModelEntity>()
+            .SetColumns(x => new AiModelEntity
+            {
+                IsHot = request.IsHot,
+                SortOrder = request.SortOrder,
+                UpdatedAt = DateTime.UtcNow
+            })
+            .Where(x => x.Id == id && x.DeletedAt == null)
+            .ExecuteCommandAsync(cancellationToken);
+    }
+
     private static ModelListItemResponse MapListItem(AiModelEntity entity)
     {
         return new ModelListItemResponse
@@ -252,6 +279,8 @@ public sealed class ModelRepository(ISqlSugarClient db) : IModelRepository
             Slug = entity.Slug,
             Vendor = entity.Vendor,
             OfficialModelId = entity.OfficialModelId,
+            RequestName = entity.RequestName,
+            ApiType = entity.ApiType,
             DisplayName = entity.DisplayName,
             Status = entity.Status,
             IsHot = entity.IsHot,
@@ -273,6 +302,8 @@ public sealed class ModelRepository(ISqlSugarClient db) : IModelRepository
             Slug = entity.Slug,
             Vendor = entity.Vendor,
             OfficialModelId = entity.OfficialModelId,
+            RequestName = entity.RequestName,
+            ApiType = entity.ApiType,
             DisplayName = entity.DisplayName,
             Description = entity.Description,
             Status = entity.Status,

@@ -281,6 +281,8 @@ public sealed class RelayPricingParser
         return new RelayPricingPreviewItemResponse
         {
             OfficialModelId = modelName,
+            RequestName = ResolveRequestName(modelName),
+            ApiType = ResolveApiType(modelName),
             DisplayName = modelName,
             BillingType = RelayPricingBillingType.Tokens,
             GroupId = group.Id,
@@ -311,6 +313,8 @@ public sealed class RelayPricingParser
         return new RelayPricingPreviewItemResponse
         {
             OfficialModelId = modelName,
+            RequestName = ResolveRequestName(modelName),
+            ApiType = ResolveApiType(modelName),
             DisplayName = modelName,
             BillingType = RelayPricingBillingType.Times,
             GroupId = group.Id,
@@ -442,6 +446,25 @@ public sealed class RelayPricingParser
     private static decimal RoundPrice(decimal value)
     {
         return Math.Round(value, 6, MidpointRounding.AwayFromZero);
+    }
+
+    private static string ResolveRequestName(string modelName)
+    {
+        var normalized = modelName.Trim();
+        if (normalized.Contains('/', StringComparison.Ordinal))
+        {
+            normalized = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? normalized;
+        }
+
+        return normalized.TrimStart('~');
+    }
+
+    private static string ResolveApiType(string modelName)
+    {
+        return modelName.Contains("anthropic", StringComparison.OrdinalIgnoreCase) ||
+            modelName.Contains("claude", StringComparison.OrdinalIgnoreCase)
+                ? "anthropic"
+                : "openai";
     }
 
     private sealed record RelayPricingGroup(string Id, string Name, decimal Rate);

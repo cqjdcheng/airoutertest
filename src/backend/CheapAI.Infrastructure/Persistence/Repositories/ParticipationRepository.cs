@@ -163,7 +163,7 @@ public sealed class ParticipationRepository(ISqlSugarClient db, IOptions<MySqlOp
 
     public async Task<IReadOnlyList<CapabilityRankingItemResponse>> GetCapabilityRankingAsync(CancellationToken cancellationToken = default)
     {
-        return await db.Queryable<ModelCapabilitySnapshotEntity, AiModelEntity>(
+        var snapshots = await db.Queryable<ModelCapabilitySnapshotEntity, AiModelEntity>(
                 (snapshot, model) => snapshot.ModelId == model.Id)
             .Where((snapshot, model) => model.DeletedAt == null && model.Status == "active")
             .OrderBy((snapshot, model) => snapshot.RankPosition, OrderByType.Asc)
@@ -177,6 +177,36 @@ public sealed class ParticipationRepository(ISqlSugarClient db, IOptions<MySqlOp
                 SnapshotAt = snapshot.SnapshotAt
             })
             .ToListAsync(cancellationToken);
+
+        if (snapshots.Count > 0)
+        {
+            return snapshots;
+        }
+
+        var models = await db.Queryable<AiModelEntity>()
+            .Where(x => x.DeletedAt == null && x.Status == "active")
+            .OrderBy(x => x.CapabilityScore, OrderByType.Desc)
+            .OrderBy(x => x.SortOrder, OrderByType.Asc)
+            .OrderBy(x => x.Id, OrderByType.Desc)
+            .Select(x => new CapabilityFallbackRow
+            {
+                ModelSlug = x.Slug,
+                ModelName = x.DisplayName,
+                Source = x.CapabilitySource,
+                CapabilityScore = x.CapabilityScore,
+                SnapshotAt = x.CapabilityUpdatedAt
+            })
+            .ToListAsync(cancellationToken);
+
+        return models.Select((model, index) => new CapabilityRankingItemResponse
+        {
+            ModelSlug = model.ModelSlug,
+            ModelName = model.ModelName,
+            Source = string.IsNullOrWhiteSpace(model.Source) ? "模型目录" : model.Source,
+            RankPosition = index + 1,
+            CapabilityScore = model.CapabilityScore ?? 0,
+            SnapshotAt = model.SnapshotAt ?? DateTime.UtcNow
+        }).ToList();
     }
 
     public async Task<PagedResult<ArticleListItemResponse>> GetArticlesAsync(int page, int pageSize, bool publicOnly, CancellationToken cancellationToken = default)
@@ -284,6 +314,7 @@ public sealed class ParticipationRepository(ISqlSugarClient db, IOptions<MySqlOp
                     x.DeletedAt == null &&
                     (x.Slug == request.ModelName ||
                      x.OfficialModelId == request.ModelName ||
+                     x.RequestName == request.ModelName ||
                      x.DisplayName == request.ModelName),
                 cancellationToken);
 
@@ -449,5 +480,14 @@ public sealed class ParticipationRepository(ISqlSugarClient db, IOptions<MySqlOp
             PageSize = pageSize,
             Total = total
         };
+    }
+
+    private sealed class CapabilityFallbackRow
+    {
+        public string ModelSlug { get; init; } = string.Empty;
+        public string ModelName { get; init; } = string.Empty;
+        public string? Source { get; init; }
+        public decimal? CapabilityScore { get; init; }
+        public DateTime? SnapshotAt { get; init; }
     }
 }

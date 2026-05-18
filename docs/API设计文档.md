@@ -719,3 +719,128 @@
 
 1. 所有 Controller、DTO、OpenAPI 都必须以本设计为准
 2. 不允许为了“统一模板”而强行合并公开接口和后台接口
+
+## 10. 当前实现补充：2026-05-14
+
+本节记录当前代码中已经落地的接口事实。后续更新正式 OpenAPI 时，应优先以本节和 Controller 实现为准。
+
+### 10.1 Public API 当前接口
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/v1/public/site-settings` | 公开站点名称和图标 |
+| GET | `/api/v1/public/home/overview` | 首页统计、热门模型、排行卡片、风险提示 |
+| GET | `/api/v1/public/models` | 公开模型目录 |
+| GET | `/api/v1/public/sites` | 公开站点目录 |
+| GET | `/api/v1/public/sites/{siteSlug}` | 公开站点详情 |
+| GET | `/api/v1/public/rankings/models/{modelSlug}` | 单模型排行 |
+| GET | `/api/v1/public/rankings/cheapest` | 多个模型的低价排行汇总 |
+| GET | `/api/v1/public/tests/latest` | 最新测试记录 |
+| GET | `/api/v1/public/tests/{id}` | 测试记录详情 |
+| GET | `/api/v1/public/self-tests/challenge` | 自助测试挑战题 |
+| POST | `/api/v1/public/self-tests` | 创建用户自助测试 |
+| GET | `/api/v1/public/self-tests/{id}` | 查询用户自助测试 |
+| POST | `/api/v1/public/submissions` | 提交中转站线索 |
+| GET | `/api/v1/public/model-capabilities` | 模型能力榜 |
+| GET | `/api/v1/public/articles` | 公开文章列表 |
+| GET | `/api/v1/public/articles/{slug}` | 公开文章详情 |
+
+### 10.2 Admin API 当前接口
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/v1/admin/site-settings` | 读取站点设置 |
+| PUT | `/api/v1/admin/site-settings` | 更新站点设置 |
+| GET | `/api/v1/admin/sites` | 中转站列表 |
+| GET | `/api/v1/admin/sites/{id}` | 中转站详情，含报价和最近测试 |
+| POST | `/api/v1/admin/sites` | 新增中转站 |
+| PUT | `/api/v1/admin/sites/{id}` | 更新中转站 |
+| PATCH | `/api/v1/admin/sites/{id}/status` | 修改中转站状态 |
+| POST | `/api/v1/admin/sites/pricing-preview` | 抓取中转价格预览 |
+| GET | `/api/v1/admin/models` | 模型列表 |
+| GET | `/api/v1/admin/models/{id}` | 模型详情 |
+| POST | `/api/v1/admin/models` | 新增模型 |
+| PUT | `/api/v1/admin/models/{id}` | 更新模型 |
+| PATCH | `/api/v1/admin/models/{id}/status` | 修改模型状态 |
+| PATCH | `/api/v1/admin/models/{id}/metadata` | 修改模型排序和热门 |
+| POST | `/api/v1/admin/models/import-preview` | 通用导入预览 |
+| POST | `/api/v1/admin/models/openrouter-preview` | OpenRouter 抓取预览 |
+| POST | `/api/v1/admin/models/import` | 批量导入模型 |
+| GET | `/api/v1/admin/model-providers` | 模型提供商列表 |
+| GET | `/api/v1/admin/model-providers/active` | 启用模型提供商 |
+| GET | `/api/v1/admin/model-providers/{id}` | 模型提供商详情 |
+| POST | `/api/v1/admin/model-providers` | 新增模型提供商 |
+| PUT | `/api/v1/admin/model-providers/{id}` | 更新模型提供商 |
+| PATCH | `/api/v1/admin/model-providers/{id}/status` | 修改模型提供商状态 |
+| GET | `/api/v1/admin/offers` | 报价快照 |
+| POST | `/api/v1/admin/offers/{offerId}/verify` | 人工确认报价 |
+| GET | `/api/v1/admin/test-records` | 后台测试记录 |
+| GET | `/api/v1/admin/risks` | 风险列表 |
+| GET | `/api/v1/admin/risks/{riskId}` | 风险详情 |
+| POST | `/api/v1/admin/risks/{riskId}/review` | 风险复核 |
+| POST | `/api/v1/admin/risks/recalculate` | 风险重算 |
+| GET | `/api/v1/admin/job-logs` | 任务执行日志 |
+| POST | `/api/v1/admin/crawl-jobs/manual-run` | 手动抓取 |
+| POST | `/api/v1/admin/test-jobs/manual-run` | 手动测试 |
+| POST | `/api/v1/admin/rankings/rebuild` | 重建排行 |
+| GET | `/api/v1/admin/submissions` | 线索列表 |
+| POST | `/api/v1/admin/submissions/{id}/approve` | 线索审核通过 |
+| POST | `/api/v1/admin/submissions/{id}/reject` | 线索审核拒绝 |
+| GET | `/api/v1/admin/articles` | 文章列表 |
+| GET | `/api/v1/admin/articles/{id}` | 文章详情 |
+| POST | `/api/v1/admin/articles` | 新增文章 |
+| PUT | `/api/v1/admin/articles/{id}` | 更新文章 |
+| PATCH | `/api/v1/admin/articles/{id}/publish` | 发布文章 |
+| PATCH | `/api/v1/admin/articles/{id}/archive` | 归档文章 |
+
+### 10.3 模型 DTO 当前口径
+
+后台模型列表和详情必须包含：
+
+| 字段 | 说明 |
+|---|---|
+| `providerId` | 关联模型提供商 |
+| `providerName` | 模型提供商名称 |
+| `vendor` | 兼容厂商名 |
+| `officialModelId` | 第三方原始 ID，例如 `openai/gpt-5.4` |
+| `requestName` | 真实请求模型名，例如 `gpt-5.4` |
+| `apiType` | `openai` / `anthropic` |
+| `displayName` | 展示名，例如 `GPT-5.4` |
+| `isHot` | 是否首页热门 |
+| `sortOrder` | 排序 |
+| `officialInputPriceUsd` | 官方输入价，USD / 1M tokens |
+| `officialOutputPriceUsd` | 官方输出价，USD / 1M tokens |
+| `capabilityScore` | 能力评分 |
+| `capabilitySource` | 能力评分来源 |
+
+### 10.4 中转价格预览当前口径
+
+`POST /api/v1/admin/sites/pricing-preview` 当前用于抓取并预览中转站报价。
+
+请求字段包括：
+
+| 字段 | 说明 |
+|---|---|
+| `siteType` | `auto` / `newapi` / `oneapi` / `onehub` |
+| `baseUrl` | 中转站 API Base URL |
+| `apiKey` | 抓取使用的 API Key |
+| `rechargeRatio` | 充值倍率 |
+| `bonusRatio` | 赠送倍率 |
+| `priceBaseline` | 价格基线 |
+| `group` | 用户分组 |
+
+返回预览项必须包含：
+
+| 字段 | 说明 |
+|---|---|
+| `modelId` | 匹配到的模型 ID，可空 |
+| `officialModelId` | 第三方原始 ID |
+| `requestName` | 模型请求名称 |
+| `apiType` | 接口类型 |
+| `displayName` | 展示名 |
+| `officialInputPriceUsd` | 官方输入价 |
+| `officialOutputPriceUsd` | 官方输出价 |
+| `siteInputPriceUsd` | 站点输入价 |
+| `siteOutputPriceUsd` | 站点输出价 |
+| `effectiveInputPriceUsd` | 折算输入价 |
+| `effectiveOutputPriceUsd` | 折算输出价 |

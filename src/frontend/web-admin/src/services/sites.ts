@@ -24,6 +24,8 @@ export type RelaySiteOffer = {
   modelSlug?: string;
   vendor?: string;
   officialModelId?: string;
+  requestName?: string;
+  apiType?: "openai" | "anthropic";
   displayName?: string;
   officialInputPriceUsd?: number;
   officialOutputPriceUsd?: number;
@@ -41,6 +43,8 @@ export type RelaySiteOffer = {
 
 export type RelayPricingPreviewItem = {
   officialModelId: string;
+  requestName: string;
+  apiType: "openai" | "anthropic";
   displayName: string;
   billingType: "tokens" | "times";
   groupId: string;

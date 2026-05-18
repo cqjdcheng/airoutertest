@@ -10,6 +10,10 @@ public sealed class AiModel : AuditableEntity
 
     public string OfficialModelId { get; set; } = string.Empty;
 
+    public string RequestName { get; set; } = string.Empty;
+
+    public string ApiType { get; set; } = "openai";
+
     public string DisplayName { get; set; } = string.Empty;
 
     public string? Description { get; set; }

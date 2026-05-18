@@ -6,6 +6,8 @@ public sealed class PublicTestRecordListItemResponse
 {
     public ulong Id { get; init; }
 
+    public string PublicId { get; init; } = string.Empty;
+
     public string SiteSlug { get; init; } = string.Empty;
 
     public string SiteName { get; init; } = string.Empty;
@@ -36,6 +38,8 @@ public sealed class PublicTestRecordListItemResponse
 public sealed class PublicTestRecordDetailResponse
 {
     public ulong Id { get; init; }
+
+    public string PublicId { get; init; } = string.Empty;
 
     public string SiteSlug { get; init; } = string.Empty;
 
@@ -140,6 +144,10 @@ public sealed class PublicModelCatalogItemResponse
 
     public string OfficialModelId { get; init; } = string.Empty;
 
+    public string RequestName { get; init; } = string.Empty;
+
+    public string ApiType { get; init; } = "openai";
+
     public decimal? OfficialInputPriceUsd { get; init; }
 
     public decimal? OfficialOutputPriceUsd { get; init; }
@@ -173,6 +181,8 @@ public interface IPublicCatalogRepository
     Task<PagedResult<PublicTestRecordListItemResponse>> GetLatestTestsAsync(int page, int pageSize, string? testType = null, CancellationToken cancellationToken = default);
 
     Task<PublicTestRecordDetailResponse?> GetTestDetailAsync(ulong id, CancellationToken cancellationToken = default);
+
+    Task<PublicTestRecordDetailResponse?> GetTestDetailByPublicIdAsync(string id, CancellationToken cancellationToken = default);
 
     Task<PagedResult<PublicRelaySiteRankingItemResponse>> GetRelaySitesAsync(int page, int pageSize, CancellationToken cancellationToken = default);
 

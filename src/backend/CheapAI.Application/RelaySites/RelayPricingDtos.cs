@@ -21,6 +21,10 @@ public sealed class RelayPricingPreviewItemResponse
 {
     public string OfficialModelId { get; init; } = string.Empty;
 
+    public string RequestName { get; init; } = string.Empty;
+
+    public string ApiType { get; init; } = "openai";
+
     public string DisplayName { get; init; } = string.Empty;
 
     public string BillingType { get; init; } = RelayPricingBillingType.Tokens;

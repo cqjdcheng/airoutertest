@@ -15,6 +15,11 @@ public sealed class UpdateModelRequestValidator : AbstractValidator<UpdateModelR
         RuleFor(x => x.ProviderName).MaximumLength(128);
         RuleFor(x => x.Vendor).MaximumLength(64);
         RuleFor(x => x.OfficialModelId).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.RequestName).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.ApiType)
+            .NotEmpty()
+            .Must(apiType => ModelApiTypeValue.All.Contains(apiType))
+            .WithMessage("Model apiType is invalid.");
         RuleFor(x => x.Slug).MaximumLength(128);
         RuleFor(x => x.Description).MaximumLength(1000);
         RuleFor(x => x.CapabilitySource).MaximumLength(64);
@@ -23,5 +28,13 @@ public sealed class UpdateModelRequestValidator : AbstractValidator<UpdateModelR
         RuleFor(x => x.Status)
             .Must(status => ModelStatusValue.All.Contains(status))
             .WithMessage("Model status is invalid.");
+    }
+}
+
+public sealed class UpdateModelMetadataRequestValidator : AbstractValidator<UpdateModelMetadataRequest>
+{
+    public UpdateModelMetadataRequestValidator()
+    {
+        RuleFor(x => x.SortOrder).GreaterThanOrEqualTo(0).LessThanOrEqualTo(999999);
     }
 }

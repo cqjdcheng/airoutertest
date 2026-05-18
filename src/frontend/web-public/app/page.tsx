@@ -11,6 +11,8 @@ type HomeOverview = {
   popularModels?: Array<{
     modelSlug: string;
     modelName: string;
+    requestName: string;
+    apiType: "openai" | "anthropic";
   }>;
   stats: {
     siteCount: number;
@@ -30,8 +32,12 @@ export default async function HomePage() {
     `/api/v1/public/rankings/cheapest?modelSlugs=${resolvedPopularModelSlugs.join(",")}&limit=5`
   );
   const rawCheapestGroups = cheapestResponse?.data ?? [];
+  const popularModelNameMap = new Map((overview?.popularModels ?? []).map((model) => [model.modelSlug, model.modelName || model.requestName || model.modelSlug]));
   const cheapestGroups = resolvedPopularModelSlugs.map(
-    (modelSlug) => rawCheapestGroups.find((group) => group.modelSlug === modelSlug) ?? { modelSlug, items: [] }
+    (modelSlug) => ({
+      ...(rawCheapestGroups.find((group) => group.modelSlug === modelSlug) ?? { modelSlug, items: [] }),
+      modelName: popularModelNameMap.get(modelSlug) ?? modelSlug
+    })
   );
   const featuredModel =
     overview?.featuredModel && resolvedPopularModelSlugs.includes(overview.featuredModel)
@@ -46,10 +52,18 @@ export default async function HomePage() {
         <section className="home-hero home-hero--focused">
           <div className="home-hero__content">
             <p className="eyebrow">Relay Intelligence</p>
-            <h1 className="display-title mt-4">挑选靠谱的中转站</h1>
+            <h1 className="display-title mt-4">先看低价，再看风险</h1>
             <p className="body-lead mt-5 max-w-3xl">
-              任何中转站存在跑路风险，为了您的财产安全, 建议先小额试用, 请勿囤积、贪图大额优惠
+              按模型查看当前低价中转，同时保留风险、稳定性和最近测试记录。任何中转站都建议先小额试用，避免囤积余额。
             </p>
+            <div className="hero-actions">
+              <Link href="/rankings" className="primary-button">
+                查看价格排行
+              </Link>
+              <Link href="/sites" className="secondary-button">
+                查看中转站
+              </Link>
+            </div>
           </div>
 
           <div className="home-hero__aside">
@@ -70,22 +84,22 @@ export default async function HomePage() {
             </div>
           </div>
         </section>
-
         <div id="self-test">
           <HomeTestWorkbench popularModels={overview?.popularModels ?? []} />
         </div>
-
         <section className="section-heading">
           <div>
             <p className="eyebrow">Market Snapshot</p>
             <h2 className="section-title">主流模型低价排行</h2>
-            <p className="section-copy">只保留核心排行入口，详细决策留到站点页和测试页。</p>
+            <p className="section-copy">每个模型只展示当前可比价的低价候选，进入站点页查看支持模型、价格和最近测试。</p>
           </div>
           <Link href="/models" className="text-button">
             查看全部模型
           </Link>
         </section>
         <HomeCheapestTabs groups={cheapestGroups} />
+
+
       </section>
     </main>
   );

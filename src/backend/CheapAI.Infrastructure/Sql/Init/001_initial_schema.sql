@@ -94,6 +94,8 @@ CREATE TABLE IF NOT EXISTS models (
   slug VARCHAR(128) NOT NULL,
   vendor VARCHAR(64) NOT NULL,
   official_model_id VARCHAR(128) NOT NULL,
+  request_name VARCHAR(128) NOT NULL,
+  api_type VARCHAR(32) NOT NULL DEFAULT 'openai',
   display_name VARCHAR(128) NOT NULL,
   description TEXT NULL,
   status VARCHAR(24) NOT NULL DEFAULT 'active',
@@ -110,7 +112,8 @@ CREATE TABLE IF NOT EXISTS models (
   PRIMARY KEY (id),
   UNIQUE KEY uk_models_slug (slug),
   UNIQUE KEY uk_models_vendor_official_id (vendor, official_model_id),
-  KEY idx_models_provider_id (provider_id)
+  KEY idx_models_provider_id (provider_id),
+  KEY idx_models_api_type (api_type)
 );
 --//@
 CREATE TABLE IF NOT EXISTS model_ranking_snapshots (
@@ -431,6 +434,8 @@ INSERT INTO models (
   slug,
   vendor,
   official_model_id,
+  request_name,
+  api_type,
   display_name,
   description,
   status,
@@ -444,6 +449,8 @@ SELECT
   'gpt-4-1-mini',
   'OpenAI',
   'gpt-4.1-mini',
+  'gpt-4.1-mini',
+  'openai',
   'GPT-4.1 mini',
   '本地预览示例模型',
   'active',
@@ -454,6 +461,48 @@ SELECT
 WHERE NOT EXISTS (
   SELECT 1 FROM models WHERE slug = 'gpt-4-1-mini'
 );
+--//@
+INSERT INTO relay_offers (
+  site_id,
+  model_id,
+  source_type,
+  currency,
+  official_input_price_usd,
+  official_output_price_usd,
+  site_input_price_usd,
+  site_output_price_usd,
+  recharge_ratio,
+  bonus_ratio,
+  effective_input_price_usd,
+  effective_output_price_usd,
+  status,
+  crawled_at
+)
+SELECT
+  s.id,
+  m.id,
+  'seed',
+  'USD',
+  0.40,
+  1.60,
+  0.32,
+  1.27,
+  1,
+  0,
+  0.32,
+  1.27,
+  'active',
+  CURRENT_TIMESTAMP(3)
+FROM relay_sites s
+JOIN models m ON m.slug = 'gpt-4-1-mini'
+WHERE s.slug = 'relay-port'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM relay_offers x
+    WHERE x.site_id = s.id
+      AND x.model_id = m.id
+      AND x.source_type = 'seed'
+  );
 --//@
 INSERT INTO model_ranking_snapshots (
   ranking_type,
@@ -492,6 +541,65 @@ WHERE m.slug = 'gpt-4-1-mini'
       AND x.window_type = '7d'
       AND x.model_id = m.id
       AND x.site_id = s.id
+  );
+--//@
+INSERT INTO test_records (
+  site_id,
+  model_id,
+  site_url,
+  site_name,
+  model_slug,
+  model_name,
+  test_type,
+  is_stream,
+  status,
+  first_token_ms,
+  full_response_ms,
+  risk_score,
+  risk_level,
+  result_summary,
+  match_score,
+  estimated_tokens,
+  checks_json,
+  tested_at
+)
+SELECT
+  s.id,
+  m.id,
+  s.base_url,
+  s.name,
+  m.slug,
+  m.display_name,
+  'platform',
+  1,
+  'success',
+  820,
+  2460,
+  14,
+  'low',
+  '平台统一测试样本通过。',
+  92,
+  1000,
+  JSON_ARRAY(JSON_OBJECT(
+    'code', 'D1',
+    'name', '协议连通性',
+    'category', '协议',
+    'status', 'pass',
+    'confidence', 'medium',
+    'scoreImpact', 15,
+    'riskImpact', 0,
+    'evidence', '本地开发样本测试记录。'
+  )),
+  CURRENT_TIMESTAMP(3)
+FROM relay_sites s
+JOIN models m ON m.slug = 'gpt-4-1-mini'
+WHERE s.slug = 'relay-port'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM test_records x
+    WHERE x.site_id = s.id
+      AND x.model_id = m.id
+      AND x.test_type = 'platform'
   );
 --//@
 INSERT INTO article_categories (slug, name)

@@ -11,6 +11,8 @@ public sealed class RelaySiteOfferUpsertRequestValidator : AbstractValidator<Rel
         RuleFor(x => x.ModelSlug).MaximumLength(128);
         RuleFor(x => x.Vendor).MaximumLength(64);
         RuleFor(x => x.OfficialModelId).MaximumLength(128);
+        RuleFor(x => x.RequestName).MaximumLength(128);
+        RuleFor(x => x.ApiType).MaximumLength(32);
         RuleFor(x => x.DisplayName).MaximumLength(128);
         RuleFor(x => x.SourceType).NotEmpty().MaximumLength(24);
         RuleFor(x => x.Status)
@@ -19,7 +21,7 @@ public sealed class RelaySiteOfferUpsertRequestValidator : AbstractValidator<Rel
         RuleFor(x => x.RechargeRatio).GreaterThan(0).LessThanOrEqualTo(100);
         RuleFor(x => x.BonusRatio).GreaterThanOrEqualTo(0).LessThanOrEqualTo(100);
         RuleFor(x => x)
-            .Must(x => x.ModelId.HasValue || !string.IsNullOrWhiteSpace(x.OfficialModelId))
+            .Must(x => x.ModelId.HasValue || !string.IsNullOrWhiteSpace(x.OfficialModelId) || !string.IsNullOrWhiteSpace(x.RequestName))
             .WithMessage("报价必须选择已有模型或填写 OfficialModelId");
     }
 }

@@ -11,6 +11,8 @@ type ModelItem = {
   modelName: string;
   vendor: string;
   officialModelId: string;
+  requestName: string;
+  apiType: "openai" | "anthropic";
   officialInputPriceUsd?: number;
   officialOutputPriceUsd?: number;
   cheapestSiteSlug?: string;
@@ -76,7 +78,7 @@ export default async function ModelsPage() {
                       <td>
                         <strong>{item.modelName}</strong>
                         <span>
-                          {item.vendor} / {item.officialModelId}
+                          {item.vendor} / {item.requestName}
                         </span>
                       </td>
                       <td>
@@ -102,7 +104,7 @@ export default async function ModelsPage() {
                         </span>
                       </td>
                       <td>
-                        <Link href={`/rankings/${item.modelSlug}`} className="text-button">
+                        <Link href={`/rankings?model=${encodeURIComponent(item.modelSlug)}`} className="text-button">
                           查看排名
                         </Link>
                       </td>

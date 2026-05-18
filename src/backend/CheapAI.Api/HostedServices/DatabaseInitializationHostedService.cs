@@ -250,6 +250,8 @@ public sealed class DatabaseInitializationHostedService(
     {
         var columns = new (string Name, string Definition)[]
         {
+            ("request_name", "ALTER TABLE models ADD COLUMN request_name VARCHAR(128) NOT NULL DEFAULT '' AFTER official_model_id;"),
+            ("api_type", "ALTER TABLE models ADD COLUMN api_type VARCHAR(32) NOT NULL DEFAULT 'openai' AFTER request_name;"),
             ("is_hot", "ALTER TABLE models ADD COLUMN is_hot TINYINT(1) NOT NULL DEFAULT 0 AFTER status;"),
             ("sort_order", "ALTER TABLE models ADD COLUMN sort_order INT NOT NULL DEFAULT 1000 AFTER is_hot;"),
             ("capability_score", "ALTER TABLE models ADD COLUMN capability_score DECIMAL(10, 4) NULL AFTER official_output_price_usd;"),
@@ -276,6 +278,36 @@ public sealed class DatabaseInitializationHostedService(
             alterCommand.CommandText = column.Definition;
             await alterCommand.ExecuteNonQueryAsync(cancellationToken);
         }
+
+        await using (var backfillRequestNameCommand = connection.CreateCommand())
+        {
+            backfillRequestNameCommand.CommandText = """
+                UPDATE models
+                SET request_name = CASE
+                    WHEN official_model_id LIKE '%/%' THEN SUBSTRING_INDEX(official_model_id, '/', -1)
+                    ELSE official_model_id
+                END
+                WHERE request_name IS NULL OR request_name = '';
+                """;
+            await backfillRequestNameCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var backfillApiTypeCommand = connection.CreateCommand())
+        {
+            backfillApiTypeCommand.CommandText = """
+                UPDATE models
+                SET api_type = CASE
+                    WHEN LOWER(CONCAT_WS(' ', vendor, official_model_id, display_name)) LIKE '%anthropic%'
+                      OR LOWER(CONCAT_WS(' ', vendor, official_model_id, display_name)) LIKE '%claude%'
+                    THEN 'anthropic'
+                    ELSE 'openai'
+                END
+                WHERE api_type IS NULL OR api_type = '';
+                """;
+            await backfillApiTypeCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await EnsureIndexAsync(connection, "models", "idx_models_api_type", "ALTER TABLE models ADD INDEX idx_models_api_type (api_type);", cancellationToken);
     }
 
     private static async Task<bool> TableExistsAsync(MySqlConnection connection, string tableName, CancellationToken cancellationToken)

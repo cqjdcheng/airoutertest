@@ -19,6 +19,10 @@ public sealed class ModelImportPreviewItemResponse
 
     public string OfficialModelId { get; init; } = string.Empty;
 
+    public string RequestName { get; init; } = string.Empty;
+
+    public string ApiType { get; init; } = ModelApiTypeValue.OpenAi;
+
     public string DisplayName { get; init; } = string.Empty;
 
     public string? Description { get; init; }
@@ -50,6 +54,10 @@ public sealed class ImportModelItemRequest
     public string Vendor { get; init; } = string.Empty;
 
     public string OfficialModelId { get; init; } = string.Empty;
+
+    public string RequestName { get; init; } = string.Empty;
+
+    public string ApiType { get; init; } = ModelApiTypeValue.OpenAi;
 
     public string DisplayName { get; init; } = string.Empty;
 

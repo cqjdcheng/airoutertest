@@ -10,6 +10,10 @@ public sealed class RelaySiteOfferUpsertRequest
 
     public string? OfficialModelId { get; init; }
 
+    public string? RequestName { get; init; }
+
+    public string? ApiType { get; init; }
+
     public string? DisplayName { get; init; }
 
     public decimal? OfficialInputPriceUsd { get; init; }
@@ -40,6 +44,10 @@ public sealed class RelaySiteOfferResponse
     public string Vendor { get; init; } = string.Empty;
 
     public string OfficialModelId { get; init; } = string.Empty;
+
+    public string RequestName { get; init; } = string.Empty;
+
+    public string ApiType { get; init; } = "openai";
 
     public string DisplayName { get; init; } = string.Empty;
 

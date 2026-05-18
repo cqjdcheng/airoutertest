@@ -13,6 +13,8 @@ public sealed class CreateModelRequestValidatorTests
         {
             Vendor = "OpenAI",
             OfficialModelId = "gpt-4.1-mini",
+            RequestName = "gpt-4.1-mini",
+            ApiType = ModelApiTypeValue.OpenAi,
             DisplayName = "GPT-4.1 mini",
             Status = "broken"
         });

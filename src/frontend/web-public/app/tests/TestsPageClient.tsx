@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { RelayTestPanel, type ModelOption } from "@/app/components/RelayTestPanel";
 import { formatDateTime, riskLabel, riskTone, score } from "@/lib/format";
 import { getJson, type PublicEnvelope } from "@/lib/api";
 import { readSelfTestHistory, subscribeSelfTestHistory, type SelfTestHistoryItem } from "@/lib/selfTestHistory";
 
 export type TestRecord = {
   id: number;
+  publicId?: string;
   sourceKey?: string;
   siteSlug: string;
   siteName: string;
@@ -57,13 +59,17 @@ type PagedResult<T> = {
 export function TestsPageClient({
   payload,
   page,
-  maxPages
+  maxPages,
+  initialDetailId,
+  modelOptions = []
 }: {
   payload: PagedResult<TestRecord> | null | undefined;
   page: number;
   maxPages: number;
+  initialDetailId?: string;
+  modelOptions?: ModelOption[];
 }) {
-  const [activeTab, setActiveTab] = useState<"mine" | "all">("mine");
+  const [activeTab, setActiveTab] = useState<"mine" | "all">("all");
   const [historyItems, setHistoryItems] = useState<SelfTestHistoryItem[]>([]);
   const [myRecords, setMyRecords] = useState<TestRecord[]>([]);
   const [myRecordsLoading, setMyRecordsLoading] = useState(false);
@@ -103,22 +109,48 @@ export function TestsPageClient({
     };
   }, [historyItems]);
 
+  useEffect(() => {
+    if (!initialDetailId) {
+      return;
+    }
+
+    openDetailById(initialDetailId);
+  }, [initialDetailId]);
+
   async function openDetail(record: TestRecord) {
     setDetailError("");
     setSelectedDetail(toDetailFallback(record));
 
-    if (!record.id) {
+    const detailId = record.publicId || (record.id ? String(record.id) : "");
+    if (!detailId) {
       return;
     }
 
     setDetailLoading(true);
-    const response = await getJson<PublicEnvelope<TestRecordDetail>>(`/api/v1/public/tests/${record.id}`);
+    const response = await getJson<PublicEnvelope<TestRecordDetail>>(`/api/v1/public/tests/${encodeURIComponent(detailId)}`);
     if (response?.data) {
       setSelectedDetail(response.data);
     } else {
       setDetailError("详情加载失败，当前仅显示列表中的基础信息。");
     }
     setDetailLoading(false);
+  }
+
+  async function openDetailById(detailId: string) {
+    setDetailError("");
+    setDetailLoading(true);
+    const response = await getJson<PublicEnvelope<TestRecordDetail>>(`/api/v1/public/tests/${encodeURIComponent(detailId)}`);
+    if (response?.data) {
+      setSelectedDetail(response.data);
+    } else {
+      setDetailError("详情加载失败。");
+    }
+    setDetailLoading(false);
+  }
+
+  function handleSelfTestCompleted() {
+    setHistoryItems(readSelfTestHistory());
+    setActiveTab("mine");
   }
 
   const allRecords = payload?.items ?? [];
@@ -130,14 +162,14 @@ export function TestsPageClient({
       <section className="page-hero">
         <div>
           <p className="eyebrow">Testing Protocol</p>
-          <h1 className="page-title">测试记录</h1>
+          <h1 className="page-title">中转测试</h1>
           <p className="body-lead mt-5">
-            用户发起测试和系统自动测试统一进入同一张结果表，列表按最新测试时间排序，点击记录查看原始检测详情。
+            直接填写接口地址、API Key 和模型名完成一次真实请求。
           </p>
         </div>
-
+{/* 
         <aside className="page-hero__aside">
-          <div className="metric-card">
+          <div className="metric-card ">
             <span>所有测试次数</span>
             <strong>{payload?.total ?? 0}</strong>
           </div>
@@ -145,19 +177,21 @@ export function TestsPageClient({
             <span>本机我的测试</span>
             <strong>{historyItems.length}</strong>
           </div>
-          <div className="page-actions mt-4">
-            <Link href="/self-test" className="primary-button">
-              发起自助测试
-            </Link>
-          </div>
-        </aside>
+        </aside> */}
+      </section>
+
+      <section className="home-workbench">
+   
+        <div className="market-panel home-workbench__panel">
+          <RelayTestPanel compact showHistory={false} modelOptions={modelOptions} onTestCompleted={handleSelfTestCompleted} />
+        </div>
       </section>
 
       <section className="data-table">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] px-5 py-4">
           <div>
-            <h2 className="text-xl font-semibold tracking-tight">统一测试结果</h2>
-            <p className="mt-1 text-sm text-[var(--text-secondary)]">两类测试使用同一套字段、同一套风险口径、同一套详情展示。</p>
+            <h2 className="text-xl font-semibold tracking-tight">测试结果</h2>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">按最新测试时间排序。</p>
           </div>
           <div className="tests-switch">
             <button className="secondary-button" data-active={activeTab === "mine"} onClick={() => setActiveTab("mine")} type="button">
@@ -170,7 +204,7 @@ export function TestsPageClient({
         </div>
 
         <TestRecordTable
-          emptyText={activeTab === "mine" ? "本机还没有测试记录。完成一次自助测试后，这里会按最新时间显示。" : "暂无测试记录。"}
+          emptyText={activeTab === "mine" ? "本机还没有自测记录。" : "暂无平台测试记录。"}
           items={visibleRecords}
           loading={visibleLoading}
           onDetail={openDetail}
@@ -195,8 +229,9 @@ export function TestsPageClient({
 }
 
 async function loadHistoryRecord(item: SelfTestHistoryItem): Promise<TestRecord> {
-  if (item.testRecordId) {
-    const response = await getJson<PublicEnvelope<TestRecordDetail>>(`/api/v1/public/tests/${item.testRecordId}`);
+  const detailId = item.testRecordId ? String(item.testRecordId) : item.id;
+  if (detailId) {
+    const response = await getJson<PublicEnvelope<TestRecordDetail>>(`/api/v1/public/tests/${encodeURIComponent(detailId)}`);
     if (response?.data) {
       return detailToRecord(response.data, item.id);
     }
@@ -394,6 +429,7 @@ function DetailMetric({ label, value }: { label: string; value: string }) {
 function detailToRecord(detail: TestRecordDetail, sourceKey?: string): TestRecord {
   return {
     id: detail.id,
+    publicId: detail.publicId,
     sourceKey,
     siteSlug: detail.siteSlug,
     siteName: detail.siteName,
@@ -414,6 +450,7 @@ function detailToRecord(detail: TestRecordDetail, sourceKey?: string): TestRecor
 function historyToRecord(item: SelfTestHistoryItem): TestRecord {
   return {
     id: item.testRecordId ?? 0,
+    publicId: item.testRecordId ? String(item.testRecordId) : item.id,
     sourceKey: item.id,
     siteSlug: item.siteSlug ?? "",
     siteName: item.siteName || hostFromUrl(item.siteUrl) || item.siteUrl,

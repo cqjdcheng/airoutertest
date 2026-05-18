@@ -14,6 +14,10 @@ public class ModelListItemResponse
 
     public string OfficialModelId { get; init; } = string.Empty;
 
+    public string RequestName { get; init; } = string.Empty;
+
+    public string ApiType { get; init; } = ModelApiTypeValue.OpenAi;
+
     public string DisplayName { get; init; } = string.Empty;
 
     public string Status { get; init; } = ModelStatusValue.Active;

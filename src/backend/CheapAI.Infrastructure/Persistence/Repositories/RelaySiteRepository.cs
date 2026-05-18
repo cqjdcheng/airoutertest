@@ -1,4 +1,5 @@
 using CheapAI.Application.Common.Paging;
+using CheapAI.Application.Models;
 using CheapAI.Application.Scoring;
 using CheapAI.Application.RelaySites;
 using CheapAI.Infrastructure.Persistence.Entities;
@@ -184,6 +185,8 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
                 ModelSlug = model.Slug,
                 Vendor = model.Vendor,
                 OfficialModelId = model.OfficialModelId,
+                RequestName = model.RequestName,
+                ApiType = model.ApiType,
                 DisplayName = model.DisplayName,
                 OfficialInputPriceUsd = offer.OfficialInputPriceUsd,
                 OfficialOutputPriceUsd = offer.OfficialOutputPriceUsd,
@@ -281,11 +284,12 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
 
         var vendor = string.IsNullOrWhiteSpace(offer.Vendor) ? "Custom" : offer.Vendor.Trim();
         var officialModelId = offer.OfficialModelId?.Trim() ?? string.Empty;
+        var requestName = NormalizeRequestName(offer.RequestName, officialModelId);
+        var apiType = NormalizeApiType(offer.ApiType, vendor, requestName);
         var existing = await db.Queryable<AiModelEntity>()
             .FirstAsync(x =>
                 x.DeletedAt == null &&
-                x.Vendor == vendor &&
-                x.OfficialModelId == officialModelId,
+                (x.RequestName == requestName || x.OfficialModelId == officialModelId),
                 cancellationToken);
 
         if (existing is not null)
@@ -294,6 +298,8 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
                 .SetColumns(x => new AiModelEntity
                 {
                     DisplayName = string.IsNullOrWhiteSpace(offer.DisplayName) ? existing.DisplayName : offer.DisplayName.Trim(),
+                    RequestName = string.IsNullOrWhiteSpace(existing.RequestName) ? requestName : existing.RequestName,
+                    ApiType = string.IsNullOrWhiteSpace(existing.ApiType) ? apiType : existing.ApiType,
                     OfficialInputPriceUsd = offer.OfficialInputPriceUsd ?? existing.OfficialInputPriceUsd,
                     OfficialOutputPriceUsd = offer.OfficialOutputPriceUsd ?? existing.OfficialOutputPriceUsd,
                     UpdatedAt = DateTime.UtcNow
@@ -303,16 +309,18 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
             return existing.Id;
         }
 
-        var displayName = string.IsNullOrWhiteSpace(offer.DisplayName) ? officialModelId : offer.DisplayName.Trim();
+        var displayName = string.IsNullOrWhiteSpace(offer.DisplayName) ? requestName : offer.DisplayName.Trim();
         var slug = await ResolveUniqueModelSlugAsync(
-            SlugHelper.Normalize(offer.ModelSlug, $"{vendor}-{officialModelId}"),
+            SlugHelper.Normalize(offer.ModelSlug, $"{vendor}-{requestName}"),
             cancellationToken);
         var now = DateTime.UtcNow;
         return (ulong)await db.Insertable(new AiModelEntity
         {
             Slug = slug,
             Vendor = vendor,
-            OfficialModelId = officialModelId,
+            OfficialModelId = string.IsNullOrWhiteSpace(officialModelId) ? requestName : officialModelId,
+            RequestName = requestName,
+            ApiType = apiType,
             DisplayName = displayName,
             Description = "由中转站录入页自动创建。",
             Status = "active",
@@ -345,6 +353,31 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
     private static decimal? CalculateEffective(decimal? price, decimal rechargeRatio, decimal bonusRatio)
     {
         return price.HasValue ? PriceCalculator.CalculateEffectiveUsd(price.Value, rechargeRatio, bonusRatio) : null;
+    }
+
+    private static string NormalizeRequestName(string? requestName, string officialModelId)
+    {
+        var normalized = string.IsNullOrWhiteSpace(requestName) ? officialModelId : requestName.Trim();
+        if (normalized.Contains('/', StringComparison.Ordinal))
+        {
+            normalized = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? normalized;
+        }
+
+        return normalized.TrimStart('~');
+    }
+
+    private static string NormalizeApiType(string? apiType, string vendor, string requestName)
+    {
+        if (!string.IsNullOrWhiteSpace(apiType) && ModelApiTypeValue.All.Contains(apiType.Trim().ToLowerInvariant()))
+        {
+            return apiType.Trim().ToLowerInvariant();
+        }
+
+        var source = $"{vendor} {requestName}";
+        return source.Contains("anthropic", StringComparison.OrdinalIgnoreCase) ||
+            source.Contains("claude", StringComparison.OrdinalIgnoreCase)
+                ? ModelApiTypeValue.Anthropic
+                : ModelApiTypeValue.OpenAi;
     }
 
     private static RelaySiteDetailResponse MapDetail(

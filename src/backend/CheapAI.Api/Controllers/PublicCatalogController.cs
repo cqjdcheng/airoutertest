@@ -17,10 +17,15 @@ public sealed class PublicCatalogController(PublicCatalogService publicCatalogSe
         return Ok(ApiResponseFactory.Success(HttpContext, result));
     }
 
-    [HttpGet("tests/{id:long}")]
-    public async Task<IActionResult> GetTestDetail(ulong id, CancellationToken cancellationToken = default)
+    [HttpGet("tests/{id}")]
+    public async Task<IActionResult> GetTestDetail(string id, CancellationToken cancellationToken = default)
     {
         var result = await publicCatalogService.GetTestDetailAsync(id, cancellationToken);
+        if (result is null)
+        {
+            return NotFound(ApiResponseFactory.Failure<object?>(HttpContext, 40401, "Test record does not exist.", null));
+        }
+
         return Ok(ApiResponseFactory.Success(HttpContext, result));
     }
 

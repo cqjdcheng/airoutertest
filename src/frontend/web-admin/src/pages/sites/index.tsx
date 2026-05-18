@@ -78,13 +78,15 @@ function toNumber(value: unknown) {
 
 function normalizeOffers(offers?: RelaySiteOffer[]) {
   return (offers ?? [])
-    .filter((offer) => offer.modelId || offer.officialModelId || offer.displayName)
+    .filter((offer) => offer.modelId || offer.officialModelId || offer.requestName || offer.displayName)
     .map((offer) => ({
       modelId: offer.modelId,
       modelSlug: offer.modelSlug,
       vendor: offer.vendor?.trim() || "Custom",
       officialModelId: offer.officialModelId?.trim(),
-      displayName: offer.displayName?.trim() || offer.officialModelId?.trim(),
+      requestName: offer.requestName?.trim() || offer.officialModelId?.trim(),
+      apiType: offer.apiType || "openai",
+      displayName: offer.displayName?.trim() || offer.requestName?.trim() || offer.officialModelId?.trim(),
       officialInputPriceUsd: toNumber(offer.officialInputPriceUsd),
       officialOutputPriceUsd: toNumber(offer.officialOutputPriceUsd),
       siteInputPriceUsd: toNumber(offer.siteInputPriceUsd),
@@ -126,7 +128,7 @@ export default function SitesPage() {
   const modelOptions = useMemo(
     () =>
       models.map((model) => ({
-        label: `${model.displayName} / ${model.officialModelId}`,
+        label: `${model.displayName} / ${model.requestName}`,
         value: model.id
       })),
     [models]
@@ -288,6 +290,8 @@ export default function SitesPage() {
         ...rows.map((row) => ({
           vendor: row.vendor || importVendor,
           officialModelId: row.officialModelId,
+          requestName: row.requestName,
+          apiType: row.apiType,
           displayName: row.displayName,
           officialInputPriceUsd: row.officialInputPriceUsd,
           officialOutputPriceUsd: row.officialOutputPriceUsd,
@@ -309,15 +313,23 @@ export default function SitesPage() {
 
   function findMatchingModel(row: RelayPricingPreviewItem) {
     const officialModelId = row.officialModelId.trim().toLowerCase();
-    if (!officialModelId) {
+    const requestName = row.requestName.trim().toLowerCase();
+    if (!officialModelId && !requestName) {
       return undefined;
     }
 
     return models.find((model) => {
       const modelOfficialId = model.officialModelId.toLowerCase();
+      const modelRequestName = model.requestName.toLowerCase();
+      if (requestName && modelRequestName === requestName) {
+        return true;
+      }
+
       return modelOfficialId === officialModelId ||
+        modelOfficialId === requestName ||
         modelOfficialId.endsWith(`/${officialModelId}`) ||
-        officialModelId.endsWith(`/${modelOfficialId}`);
+        officialModelId.endsWith(`/${modelOfficialId}`) ||
+        modelOfficialId.endsWith(`/${requestName}`);
     });
   }
 
@@ -330,6 +342,8 @@ export default function SitesPage() {
       modelSlug: model?.slug,
       vendor: model?.vendor || importVendor || "Custom",
       officialModelId: model?.officialModelId || row.officialModelId,
+      requestName: model?.requestName || row.requestName,
+      apiType: model?.apiType || "openai",
       displayName: model?.displayName || row.displayName,
       officialInputPriceUsd: model?.officialInputPriceUsd,
       officialOutputPriceUsd: model?.officialOutputPriceUsd,
@@ -383,6 +397,8 @@ export default function SitesPage() {
     form.setFieldValue(["offers", rowIndex, "modelSlug"], model.slug);
     form.setFieldValue(["offers", rowIndex, "vendor"], model.vendor);
     form.setFieldValue(["offers", rowIndex, "officialModelId"], model.officialModelId);
+    form.setFieldValue(["offers", rowIndex, "requestName"], model.requestName);
+    form.setFieldValue(["offers", rowIndex, "apiType"], model.apiType);
     form.setFieldValue(["offers", rowIndex, "displayName"], model.displayName);
     form.setFieldValue(["offers", rowIndex, "officialInputPriceUsd"], model.officialInputPriceUsd);
     form.setFieldValue(["offers", rowIndex, "officialOutputPriceUsd"], model.officialOutputPriceUsd);
@@ -614,6 +630,17 @@ export default function SitesPage() {
                             </Form.Item>
                             <Form.Item label="Official ID" name={[field.name, "officialModelId"]} rules={[{ required: true, message: "请输入 Official ID" }]} style={{ width: 200 }}>
                               <Input />
+                            </Form.Item>
+                            <Form.Item label="请求名称" name={[field.name, "requestName"]} rules={[{ required: true, message: "请输入模型请求名称" }]} style={{ width: 200 }}>
+                              <Input />
+                            </Form.Item>
+                            <Form.Item label="接口类型" name={[field.name, "apiType"]} style={{ width: 130 }}>
+                              <Select
+                                options={[
+                                  { label: "OpenAI", value: "openai" },
+                                  { label: "Anthropic", value: "anthropic" }
+                                ]}
+                              />
                             </Form.Item>
                           </Space>
                           <Space wrap align="start">

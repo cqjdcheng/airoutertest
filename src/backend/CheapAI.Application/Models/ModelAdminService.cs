@@ -30,6 +30,8 @@ public sealed class ModelAdminService(
         var slug = SlugHelper.Normalize(request.Slug, request.DisplayName);
         var provider = await ResolveProviderAsync(request, cancellationToken);
         var vendor = ResolveVendor(request, provider);
+        var requestName = NormalizeRequestName(request.RequestName, request.OfficialModelId);
+        var apiType = NormalizeApiType(request.ApiType, vendor);
 
         if (await modelRepository.ExistsBySlugAsync(slug, null, cancellationToken))
         {
@@ -47,6 +49,8 @@ public sealed class ModelAdminService(
             Slug = slug,
             Vendor = vendor,
             OfficialModelId = request.OfficialModelId,
+            RequestName = requestName,
+            ApiType = apiType,
             DisplayName = request.DisplayName,
             Description = request.Description,
             Status = request.Status,
@@ -72,6 +76,8 @@ public sealed class ModelAdminService(
         var slug = SlugHelper.Normalize(request.Slug, request.DisplayName);
         var provider = await ResolveProviderAsync(request, cancellationToken);
         var vendor = ResolveVendor(request, provider);
+        var requestName = NormalizeRequestName(request.RequestName, request.OfficialModelId);
+        var apiType = NormalizeApiType(request.ApiType, vendor);
 
         if (await modelRepository.ExistsBySlugAsync(slug, id, cancellationToken))
         {
@@ -89,6 +95,8 @@ public sealed class ModelAdminService(
             Slug = slug,
             Vendor = vendor,
             OfficialModelId = request.OfficialModelId,
+            RequestName = requestName,
+            ApiType = apiType,
             DisplayName = request.DisplayName,
             Description = request.Description,
             Status = request.Status,
@@ -122,6 +130,8 @@ public sealed class ModelAdminService(
         {
             var provider = await ResolveProviderAsync(item, cancellationToken);
             var vendor = ResolveVendor(item, provider);
+            var requestName = NormalizeRequestName(item.RequestName, item.OfficialModelId);
+            var apiType = NormalizeApiType(item.ApiType, vendor);
             var existing = await modelRepository.GetByVendorAndOfficialModelIdAsync(vendor, item.OfficialModelId, cancellationToken);
             var slugFallback = item.OfficialModelId.Contains('/', StringComparison.Ordinal)
                 ? item.OfficialModelId
@@ -133,6 +143,8 @@ public sealed class ModelAdminService(
                 Slug = slug,
                 Vendor = vendor,
                 OfficialModelId = item.OfficialModelId,
+                RequestName = requestName,
+                ApiType = apiType,
                 DisplayName = item.DisplayName,
                 Description = item.Description,
                 Status = item.Status,
@@ -171,6 +183,17 @@ public sealed class ModelAdminService(
         }
 
         await modelRepository.UpdateStatusAsync(id, request.Status, cancellationToken);
+    }
+
+    public async Task UpdateMetadataAsync(ulong id, UpdateModelMetadataRequest request, CancellationToken cancellationToken = default)
+    {
+        var existing = await modelRepository.GetByIdAsync(id, cancellationToken);
+        if (existing is null)
+        {
+            throw new AppNotFoundException("妯″瀷涓嶅瓨鍦?");
+        }
+
+        await modelRepository.UpdateMetadataAsync(id, request, cancellationToken);
     }
 
     private async Task<ModelProviderListItemResponse?> ResolveProviderAsync(CreateModelRequest request, CancellationToken cancellationToken)
@@ -219,5 +242,29 @@ public sealed class ModelAdminService(
     private static string FirstNonEmpty(params string?[] values)
     {
         return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
+    }
+
+    private static string NormalizeRequestName(string? requestName, string officialModelId)
+    {
+        var normalized = FirstNonEmpty(requestName, officialModelId);
+        if (normalized.Contains('/', StringComparison.Ordinal))
+        {
+            normalized = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? normalized;
+        }
+
+        return normalized.Trim().TrimStart('~');
+    }
+
+    private static string NormalizeApiType(string? apiType, string vendor)
+    {
+        if (!string.IsNullOrWhiteSpace(apiType) && ModelApiTypeValue.All.Contains(apiType.Trim().ToLowerInvariant()))
+        {
+            return apiType.Trim().ToLowerInvariant();
+        }
+
+        return vendor.Contains("anthropic", StringComparison.OrdinalIgnoreCase) ||
+            vendor.Contains("claude", StringComparison.OrdinalIgnoreCase)
+                ? ModelApiTypeValue.Anthropic
+                : ModelApiTypeValue.OpenAi;
     }
 }

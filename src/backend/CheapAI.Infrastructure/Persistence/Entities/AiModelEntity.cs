@@ -20,6 +20,12 @@ public sealed class AiModelEntity
     [SugarColumn(ColumnName = "official_model_id")]
     public string OfficialModelId { get; set; } = string.Empty;
 
+    [SugarColumn(ColumnName = "request_name")]
+    public string RequestName { get; set; } = string.Empty;
+
+    [SugarColumn(ColumnName = "api_type")]
+    public string ApiType { get; set; } = "openai";
+
     [SugarColumn(ColumnName = "display_name")]
     public string DisplayName { get; set; } = string.Empty;
 

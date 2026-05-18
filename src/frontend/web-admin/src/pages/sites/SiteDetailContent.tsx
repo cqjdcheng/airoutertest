@@ -61,6 +61,8 @@ export default function SiteDetailContent({ detail }: SiteDetailContentProps) {
               columns={[
                 { title: "模型", dataIndex: "displayName" },
                 { title: "Vendor", dataIndex: "vendor", width: 120 },
+                { title: "请求名称", dataIndex: "requestName", ellipsis: true },
+                { title: "接口类型", dataIndex: "apiType", width: 100 },
                 { title: "Official ID", dataIndex: "officialModelId", ellipsis: true },
                 { title: "官方价", render: (_, record) => price(record.officialInputPriceUsd, record.officialOutputPriceUsd) },
                 { title: "站点价", render: (_, record) => price(record.siteInputPriceUsd, record.siteOutputPriceUsd) },

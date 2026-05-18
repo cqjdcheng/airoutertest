@@ -17,13 +17,13 @@ const footerGroups = [
     links: [
       { href: "/capabilities", label: "能力榜" },
       { href: "/articles", label: "文章资料" },
-      { href: "/self-test", label: "自助测试" }
+      { href: "/tests", label: "自助测试" }
     ]
   },
   {
     title: "使用原则",
     links: [
-      { href: "/rankings/gpt-5.5", label: "先看价格排行" },
+      { href: "/rankings", label: "先看价格排行" },
       { href: "/tests", label: "再看稳定与风险" },
       { href: "/sites", label: "最后核对企业属性" }
     ]

@@ -22,6 +22,10 @@ public sealed class HomePopularModelResponse
     public string ModelSlug { get; init; } = string.Empty;
 
     public string ModelName { get; init; } = string.Empty;
+
+    public string RequestName { get; init; } = string.Empty;
+
+    public string ApiType { get; init; } = "openai";
 }
 
 public sealed class HomeOverviewStatsResponse

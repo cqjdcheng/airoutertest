@@ -65,4 +65,11 @@ public sealed class AdminModelsController(ModelAdminService modelAdminService) :
         await modelAdminService.UpdateStatusAsync(id, request, cancellationToken);
         return Ok(ApiResponseFactory.Success(HttpContext));
     }
+
+    [HttpPatch("{id}/metadata")]
+    public async Task<IActionResult> UpdateMetadata(ulong id, [FromBody] UpdateModelMetadataRequest request, CancellationToken cancellationToken)
+    {
+        await modelAdminService.UpdateMetadataAsync(id, request, cancellationToken);
+        return Ok(ApiResponseFactory.Success(HttpContext));
+    }
 }

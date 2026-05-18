@@ -7,13 +7,13 @@ type PublicHeaderProps = {
   featuredModel?: string;
 };
 
-export function PublicHeader({ featuredModel = "gpt-5.5" }: PublicHeaderProps) {
+export function PublicHeader({ featuredModel: _featuredModel = "gpt-4-1-mini" }: PublicHeaderProps) {
   const branding = usePublicBranding();
   const links = [
     { href: "/sites", label: "中转站大全" },
     { href: "/models", label: "模型大全" },
     { href: "/tests", label: "中转测试" },
-    { href: `/rankings/${featuredModel}`, label: "价格排行" },
+    { href: "/rankings", label: "价格排行" },
     { href: "/capabilities", label: "能力榜" },
     { href: "/articles", label: "文章" }
   ];
@@ -39,7 +39,7 @@ export function PublicHeader({ featuredModel = "gpt-5.5" }: PublicHeaderProps) {
         </nav>
 
         <div className="site-header__actions">
-          <Link href="/self-test" className="primary-button">
+          <Link href="/tests" className="primary-button">
             立即自测
           </Link>
         </div>

@@ -16,7 +16,6 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
 
     public async Task<PagedResult<PublicTestRecordListItemResponse>> GetLatestTestsAsync(int page, int pageSize, string? testType = null, CancellationToken cancellationToken = default)
     {
-        RefAsync<int> total = 0;
         var query = db.Queryable<TestRecordEntity, RelaySiteEntity, AiModelEntity>(
                 (record, site, model) => new JoinQueryInfos(
                     JoinType.Left, record.SiteId == site.Id,
@@ -63,17 +62,37 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
                 ChecksJson = record.ChecksJson,
                 TestedAt = record.TestedAt
             })
-            .ToPageListAsync(page, pageSize, total, cancellationToken);
+            .ToListAsync(cancellationToken);
 
         var items = rows.Select(MapListItem).ToList();
+        var linkedSelfTestIds = await db.Queryable<TestRecordEntity>()
+            .Where(x => x.SelfTestId != null)
+            .Select(x => x.SelfTestId)
+            .ToListAsync(cancellationToken);
+
+        var linkedSelfTestIdSet = linkedSelfTestIds
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var selfTests = await db.Queryable<SelfTestEntity>()
+            .Where(x => x.ExpiresAt > DateTime.UtcNow)
+            .OrderBy(x => x.CreatedAt, OrderByType.Desc)
+            .ToListAsync(cancellationToken);
+
+        items.AddRange(selfTests
+            .Where(x => !linkedSelfTestIdSet.Contains(x.Id))
+            .Where(x => string.IsNullOrWhiteSpace(testType) || IsSelfTestType(testType))
+            .Select(MapSelfTestListItem));
+
         var riskMap = await LoadRiskMapAsync(items.Select(x => (x.SiteSlug, x.ModelSlug)).Distinct().ToList(), cancellationToken);
         items = items.Select(row =>
         {
             var risk = riskMap.GetValueOrDefault($"{row.SiteSlug}|{row.ModelSlug}");
             return row.RiskScore > 0 ? row : ApplyRisk(row, risk);
-        }).ToList();
+        })
+            .OrderByDescending(x => x.TestedAt)
+            .ToList();
 
-        return ToPaged(items, page, pageSize, total);
+        return ToPaged(items.Skip((Math.Max(page, 1) - 1) * pageSize).Take(pageSize).ToList(), page, pageSize, items.Count);
     }
 
     public async Task<PublicTestRecordDetailResponse?> GetTestDetailAsync(ulong id, CancellationToken cancellationToken = default)
@@ -118,6 +137,23 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
         return row is null ? null : MapDetail(row);
     }
 
+    public async Task<PublicTestRecordDetailResponse?> GetTestDetailByPublicIdAsync(string id, CancellationToken cancellationToken = default)
+    {
+        if (ulong.TryParse(id, out var recordId))
+        {
+            var recordDetail = await GetTestDetailAsync(recordId, cancellationToken);
+            if (recordDetail is not null)
+            {
+                return recordDetail;
+            }
+        }
+
+        var selfTest = await db.Queryable<SelfTestEntity>()
+            .FirstAsync(x => x.Id == id && x.ExpiresAt > DateTime.UtcNow, cancellationToken);
+
+        return selfTest is null ? null : MapSelfTestDetail(selfTest);
+    }
+
     public async Task<PagedResult<PublicRelaySiteRankingItemResponse>> GetRelaySitesAsync(int page, int pageSize, CancellationToken cancellationToken = default)
     {
         var sites = await db.Queryable<RelaySiteEntity>()
@@ -126,6 +162,10 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
 
         var snapshots = await db.Queryable<ModelRankingSnapshotEntity>()
             .Where(x => x.RankingType == "value" && x.WindowType == "7d")
+            .ToListAsync(cancellationToken);
+
+        var offers = await db.Queryable<RelayOfferEntity>()
+            .Where(x => x.Status == "active")
             .ToListAsync(cancellationToken);
 
         var tests = await db.Queryable<TestRecordEntity>()
@@ -155,7 +195,10 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
                 StabilityScore = stability,
                 RiskScore = risk,
                 RiskLevel = ResolveRiskLevel(risk),
-                CoveredModelCount = siteSnapshots.Select(x => x.ModelId).Distinct().Count(),
+                CoveredModelCount = siteSnapshots.Select(x => x.ModelId)
+                    .Concat(offers.Where(x => x.SiteId == site.Id).Select(x => x.ModelId))
+                    .Distinct()
+                    .Count(),
                 LatestTestAt = siteTests.FirstOrDefault()?.TestedAt
             };
         }).OrderByDescending(x => x.SiteScore).ToList();
@@ -190,26 +233,38 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
             })
             .ToListAsync(cancellationToken);
 
+        var offers = await QueryActiveOfferRowsAsync(cancellationToken);
+
         var items = models.Select(model =>
         {
             var modelSnapshots = snapshots.Where(x => x.ModelId == model.Id).OrderBy(x => x.RankPosition).ToList();
+            var modelOffers = offers
+                .Where(x => x.ModelId == model.Id)
+                .OrderBy(x => x.PriceSort)
+                .ToList();
             var best = modelSnapshots.FirstOrDefault();
+            var fallback = modelOffers.FirstOrDefault();
             return new PublicModelCatalogItemResponse
             {
                 ModelSlug = model.Slug,
                 ModelName = model.DisplayName,
                 Vendor = model.Vendor,
                 OfficialModelId = model.OfficialModelId,
+                RequestName = model.RequestName,
+                ApiType = model.ApiType,
                 OfficialInputPriceUsd = model.OfficialInputPriceUsd,
                 OfficialOutputPriceUsd = model.OfficialOutputPriceUsd,
-                CheapestSiteSlug = best?.SiteSlug,
-                CheapestSiteName = best?.SiteName,
-                EffectiveInputPriceUsd = best?.EffectiveInputPriceUsd,
-                EffectiveOutputPriceUsd = best?.EffectiveOutputPriceUsd,
+                CheapestSiteSlug = best?.SiteSlug ?? fallback?.SiteSlug,
+                CheapestSiteName = best?.SiteName ?? fallback?.SiteName,
+                EffectiveInputPriceUsd = best?.EffectiveInputPriceUsd ?? fallback?.EffectiveInputPriceUsd,
+                EffectiveOutputPriceUsd = best?.EffectiveOutputPriceUsd ?? fallback?.EffectiveOutputPriceUsd,
                 StabilityScore = best?.StabilityScore,
                 RiskScore = best?.RiskScore,
                 RiskLevel = ResolveRiskLevel(best?.RiskScore),
-                RelaySiteCount = modelSnapshots.Select(x => x.SiteSlug).Distinct().Count()
+                RelaySiteCount = modelSnapshots.Select(x => x.SiteSlug)
+                    .Concat(modelOffers.Select(x => x.SiteSlug))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Count()
             };
         }).ToList();
 
@@ -255,6 +310,11 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
                 .Take(limit)
                 .ToListAsync(cancellationToken);
 
+            if (rows.Count == 0)
+            {
+                rows = await QueryOfferRankingRowsAsync(model.Id, limit, cancellationToken);
+            }
+
             result.Add(new PublicCheapestRankingResponse
             {
                 ModelSlug = modelSlug,
@@ -293,6 +353,91 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
             });
     }
 
+    private async Task<IReadOnlyList<ModelOfferRow>> QueryActiveOfferRowsAsync(CancellationToken cancellationToken)
+    {
+        var rows = await db.Queryable<RelayOfferEntity, RelaySiteEntity>(
+                (offer, site) => offer.SiteId == site.Id)
+            .Where((offer, site) =>
+                offer.Status == "active" &&
+                site.Status == "active" &&
+                site.DeletedAt == null)
+            .Select((offer, site) => new ModelOfferRow
+            {
+                ModelId = offer.ModelId,
+                SiteSlug = site.Slug,
+                SiteName = site.Name,
+                EffectiveInputPriceUsd = offer.EffectiveInputPriceUsd,
+                EffectiveOutputPriceUsd = offer.EffectiveOutputPriceUsd
+            })
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(x => x with
+        {
+            PriceSort = (x.EffectiveInputPriceUsd ?? 999999m) + (x.EffectiveOutputPriceUsd ?? 999999m)
+        }).ToList();
+    }
+
+    private async Task<List<ModelRankingItemResponse>> QueryOfferRankingRowsAsync(ulong modelId, int limit, CancellationToken cancellationToken)
+    {
+        var rows = await db.Queryable<RelayOfferEntity, RelaySiteEntity>(
+                (offer, site) => offer.SiteId == site.Id)
+            .Where((offer, site) =>
+                offer.ModelId == modelId &&
+                offer.Status == "active" &&
+                site.Status == "active" &&
+                site.DeletedAt == null)
+            .Select((offer, site) => new ModelOfferRankingRow
+            {
+                SiteId = site.Id,
+                SiteSlug = site.Slug,
+                SiteName = site.Name,
+                EffectiveInputPriceUsd = offer.EffectiveInputPriceUsd,
+                EffectiveOutputPriceUsd = offer.EffectiveOutputPriceUsd,
+                SupportsInvoice = site.SupportsInvoice,
+                SupportsRefund = site.SupportsRefund,
+                HasDocs = site.HasDocs
+            })
+            .ToListAsync(cancellationToken);
+
+        var riskRows = await db.Queryable<RiskEvidenceEntity>()
+            .Where(x => x.ModelId == modelId)
+            .Select(x => new
+            {
+                x.SiteId,
+                x.RiskScore
+            })
+            .ToListAsync(cancellationToken);
+
+        var riskMap = riskRows
+            .GroupBy(x => x.SiteId)
+            .ToDictionary(x => x.Key, x => (decimal?)x.Max(row => row.RiskScore));
+
+        return rows
+            .OrderBy(x => (x.EffectiveInputPriceUsd ?? 999999m) + (x.EffectiveOutputPriceUsd ?? 999999m))
+            .Take(limit)
+            .Select(x =>
+            {
+                var riskScore = riskMap.GetValueOrDefault(x.SiteId);
+                return new ModelRankingItemResponse
+                {
+                    SiteSlug = x.SiteSlug,
+                    SiteName = x.SiteName,
+                    EffectiveInputPriceUsd = x.EffectiveInputPriceUsd,
+                    EffectiveOutputPriceUsd = x.EffectiveOutputPriceUsd,
+                    Availability24h = null,
+                    Stability7d = null,
+                    FirstTokenMs = null,
+                    FullResponseMs = null,
+                    RiskScore = riskScore,
+                    RiskLevel = ResolveRiskLevel(riskScore),
+                    SupportsInvoice = x.SupportsInvoice,
+                    SupportsRefund = x.SupportsRefund,
+                    HasDocs = x.HasDocs
+                };
+            })
+            .ToList();
+    }
+
     private static decimal Average(IEnumerable<decimal?> values)
     {
         var numeric = values.Where(x => x.HasValue).Select(x => x!.Value).ToList();
@@ -313,6 +458,7 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
         return new PublicTestRecordListItemResponse
         {
             Id = item.Id,
+            PublicId = item.PublicId,
             SiteSlug = item.SiteSlug,
             SiteName = item.SiteName,
             SiteUrl = item.SiteUrl,
@@ -337,6 +483,7 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
         return new PublicTestRecordListItemResponse
         {
             Id = row.Id,
+            PublicId = row.Id.ToString(),
             SiteSlug = row.SiteSlug ?? string.Empty,
             SiteName = siteName,
             SiteUrl = FirstNonEmpty(row.SiteUrl, row.FallbackSiteUrl, null),
@@ -359,6 +506,7 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
         return new PublicTestRecordDetailResponse
         {
             Id = listItem.Id,
+            PublicId = listItem.PublicId,
             SiteSlug = listItem.SiteSlug,
             SiteName = listItem.SiteName,
             SiteUrl = listItem.SiteUrl,
@@ -384,6 +532,62 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
         };
     }
 
+    private static PublicTestRecordListItemResponse MapSelfTestListItem(SelfTestEntity entity)
+    {
+        var siteName = HostFromUrl(entity.SiteUrl);
+        var modelName = FirstNonEmpty(entity.ModelName, "未知模型");
+
+        return new PublicTestRecordListItemResponse
+        {
+            Id = 0,
+            PublicId = entity.Id,
+            SiteSlug = string.Empty,
+            SiteName = siteName,
+            SiteUrl = entity.SiteUrl,
+            ModelSlug = SlugHelper.Normalize(null, modelName),
+            ModelName = modelName,
+            TestType = "user",
+            Status = NormalizeStatus(entity.Status),
+            FirstTokenMs = entity.FirstTokenMs,
+            FullResponseMs = entity.FullResponseMs,
+            RiskScore = entity.RiskScore,
+            RiskLevel = entity.RiskLevel,
+            TestedAt = entity.CreatedAt
+        };
+    }
+
+    private static PublicTestRecordDetailResponse MapSelfTestDetail(SelfTestEntity entity)
+    {
+        var listItem = MapSelfTestListItem(entity);
+        return new PublicTestRecordDetailResponse
+        {
+            Id = listItem.Id,
+            PublicId = listItem.PublicId,
+            SiteSlug = listItem.SiteSlug,
+            SiteName = listItem.SiteName,
+            SiteUrl = listItem.SiteUrl,
+            ModelSlug = listItem.ModelSlug,
+            ModelName = listItem.ModelName,
+            TestType = listItem.TestType,
+            Status = listItem.Status,
+            FirstTokenMs = listItem.FirstTokenMs,
+            FullResponseMs = listItem.FullResponseMs,
+            ErrorMessage = null,
+            RiskScore = listItem.RiskScore,
+            RiskLevel = listItem.RiskLevel,
+            TestedAt = listItem.TestedAt,
+            ResultSummary = entity.ResultSummary,
+            MatchScore = entity.MatchScore,
+            InputTokens = entity.InputTokens,
+            OutputTokens = entity.OutputTokens,
+            TotalTokens = entity.TotalTokens,
+            EstimatedTokens = entity.EstimatedTokens,
+            TokensPerSecond = entity.TokensPerSecond,
+            IsStream = entity.IsStream,
+            Checks = DeserializeChecks(entity.ChecksJson)
+        };
+    }
+
     private static IReadOnlyList<PublicTestProbeResultResponse> DeserializeChecks(string? checksJson)
     {
         if (string.IsNullOrWhiteSpace(checksJson))
@@ -404,6 +608,23 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
     private static string FirstNonEmpty(params string?[] values)
     {
         return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
+    }
+
+    private static string HostFromUrl(string siteUrl)
+    {
+        return Uri.TryCreate(siteUrl, UriKind.Absolute, out var uri) ? uri.Host : siteUrl;
+    }
+
+    private static bool IsSelfTestType(string? testType)
+    {
+        return string.IsNullOrWhiteSpace(testType) ||
+               testType.Equals("user", StringComparison.OrdinalIgnoreCase) ||
+               testType.Equals("self", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeStatus(string status)
+    {
+        return status.Equals("succeeded", StringComparison.OrdinalIgnoreCase) ? "success" : status;
     }
 
     private static ModelRankingItemResponse ApplyRiskLevel(ModelRankingItemResponse item)
@@ -506,5 +727,27 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
         public decimal? StabilityScore { get; init; }
         public decimal? RiskScore { get; init; }
         public int RankPosition { get; init; }
+    }
+
+    private sealed record ModelOfferRow
+    {
+        public ulong ModelId { get; init; }
+        public string SiteSlug { get; init; } = string.Empty;
+        public string SiteName { get; init; } = string.Empty;
+        public decimal? EffectiveInputPriceUsd { get; init; }
+        public decimal? EffectiveOutputPriceUsd { get; init; }
+        public decimal PriceSort { get; init; }
+    }
+
+    private sealed class ModelOfferRankingRow
+    {
+        public ulong SiteId { get; init; }
+        public string SiteSlug { get; init; } = string.Empty;
+        public string SiteName { get; init; } = string.Empty;
+        public decimal? EffectiveInputPriceUsd { get; init; }
+        public decimal? EffectiveOutputPriceUsd { get; init; }
+        public bool SupportsInvoice { get; init; }
+        public bool SupportsRefund { get; init; }
+        public bool HasDocs { get; init; }
     }
 }

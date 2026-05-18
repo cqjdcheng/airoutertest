@@ -34,6 +34,11 @@ public sealed class ImportModelItemRequestValidator : AbstractValidator<ImportMo
         RuleFor(x => x.Slug).MaximumLength(128);
         RuleFor(x => x.Vendor).MaximumLength(64);
         RuleFor(x => x.OfficialModelId).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.RequestName).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.ApiType)
+            .NotEmpty()
+            .Must(apiType => ModelApiTypeValue.All.Contains(apiType))
+            .WithMessage("Model apiType is invalid.");
         RuleFor(x => x.DisplayName).NotEmpty().MaximumLength(128);
         RuleFor(x => x.Description).MaximumLength(1000);
         RuleFor(x => x.CapabilitySource).MaximumLength(64);

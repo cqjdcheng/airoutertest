@@ -189,6 +189,8 @@ public sealed class OpenAiCompatibleModelCatalogCrawler : IModelCatalogCrawler
             ProviderName = string.IsNullOrWhiteSpace(resolvedVendor) ? vendor : resolvedVendor,
             Vendor = string.IsNullOrWhiteSpace(resolvedVendor) ? vendor : resolvedVendor,
             OfficialModelId = modelId,
+            RequestName = ResolveRequestName(modelId),
+            ApiType = InferApiType(resolvedVendor, modelId),
             DisplayName = displayName,
             Description = TryGetString(item, "description"),
             OfficialInputPriceUsd = TryGetPrice(item, "official_input_price_usd", "input_price", "prompt_price", "price_input"),
@@ -211,6 +213,8 @@ public sealed class OpenAiCompatibleModelCatalogCrawler : IModelCatalogCrawler
             ProviderName = providerName,
             Vendor = providerName,
             OfficialModelId = modelId,
+            RequestName = ResolveRequestName(modelId),
+            ApiType = InferApiType(providerSlug, modelId),
             DisplayName = displayName,
             Description = TryGetString(item, "description"),
             OfficialInputPriceUsd = TryGetOpenRouterPricePerMillion(item, "prompt"),
@@ -231,6 +235,26 @@ public sealed class OpenAiCompatibleModelCatalogCrawler : IModelCatalogCrawler
     {
         var rawProvider = modelId.Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "openrouter";
         return SlugHelper.Normalize(null, rawProvider);
+    }
+
+    private static string ResolveRequestName(string modelId)
+    {
+        var normalized = modelId.Trim();
+        if (normalized.Contains('/', StringComparison.Ordinal))
+        {
+            normalized = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? normalized;
+        }
+
+        return normalized.TrimStart('~');
+    }
+
+    private static string InferApiType(string? providerOrVendor, string modelId)
+    {
+        var source = $"{providerOrVendor} {modelId}";
+        return source.Contains("anthropic", StringComparison.OrdinalIgnoreCase) ||
+            source.Contains("claude", StringComparison.OrdinalIgnoreCase)
+                ? ModelApiTypeValue.Anthropic
+                : ModelApiTypeValue.OpenAi;
     }
 
     private static string ResolveOpenRouterProviderName(string providerSlug, string displayName)

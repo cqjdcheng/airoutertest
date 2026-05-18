@@ -88,6 +88,7 @@ public sealed class ModelRankingSnapshotRepository(ISqlSugarClient db, IRelaySit
             .OrderBy((snapshot, site) => snapshot.RankPosition, OrderByType.Asc)
             .Select((snapshot, site) => new ModelRankingRow
             {
+                SiteId = site.Id,
                 SiteSlug = site.Slug,
                 SiteName = site.Name,
                 EffectiveInputPriceUsd = snapshot.EffectiveInputPriceUsd,
@@ -101,6 +102,15 @@ public sealed class ModelRankingSnapshotRepository(ISqlSugarClient db, IRelaySit
                 HasDocs = site.HasDocs
             })
             .ToPageListAsync(query.Page, query.PageSize, total, cancellationToken);
+
+        DateTime? fallbackSnapshotAt = null;
+        if (rawItems.Count == 0 && rankingType.Equals("price", StringComparison.OrdinalIgnoreCase))
+        {
+            var fallback = await QueryOfferRankingRowsAsync(model.Id, query, cancellationToken);
+            rawItems = fallback.Items;
+            total = fallback.Total;
+            fallbackSnapshotAt = fallback.SnapshotAt;
+        }
 
         var items = rawItems.Select(item => new ModelRankingItemResponse
         {
@@ -134,7 +144,7 @@ public sealed class ModelRankingSnapshotRepository(ISqlSugarClient db, IRelaySit
             },
             RankingType = rankingType,
             Window = window,
-            SnapshotAt = snapshotAt == default ? null : snapshotAt,
+            SnapshotAt = snapshotAt == default ? fallbackSnapshotAt : snapshotAt,
             Result = new PagedResult<ModelRankingItemResponse>
             {
                 Items = items,
@@ -184,7 +194,9 @@ public sealed class ModelRankingSnapshotRepository(ISqlSugarClient db, IRelaySit
             .Select(x => new HomePopularModelResponse
             {
                 ModelSlug = x.Slug,
-                ModelName = x.DisplayName
+                ModelName = x.DisplayName,
+                RequestName = x.RequestName,
+                ApiType = x.ApiType
             })
             .Take(limit)
             .ToListAsync(cancellationToken);
@@ -201,7 +213,9 @@ public sealed class ModelRankingSnapshotRepository(ISqlSugarClient db, IRelaySit
             .Select(x => new HomePopularModelResponse
             {
                 ModelSlug = x.Slug,
-                ModelName = x.DisplayName
+                ModelName = x.DisplayName,
+                RequestName = x.RequestName,
+                ApiType = x.ApiType
             })
             .Take(limit)
             .ToListAsync(cancellationToken);
@@ -233,6 +247,81 @@ public sealed class ModelRankingSnapshotRepository(ISqlSugarClient db, IRelaySit
         return items;
     }
 
+    private async Task<OfferRankingFallback> QueryOfferRankingRowsAsync(ulong modelId, ModelRankingQuery query, CancellationToken cancellationToken)
+    {
+        var offerRows = await db.Queryable<RelayOfferEntity, RelaySiteEntity>(
+                (offer, site) => offer.SiteId == site.Id)
+            .Where((offer, site) =>
+                offer.ModelId == modelId &&
+                offer.Status == "active" &&
+                site.Status == "active" &&
+                site.DeletedAt == null)
+            .Select((offer, site) => new OfferRankingRow
+            {
+                SiteId = site.Id,
+                SiteSlug = site.Slug,
+                SiteName = site.Name,
+                EffectiveInputPriceUsd = offer.EffectiveInputPriceUsd,
+                EffectiveOutputPriceUsd = offer.EffectiveOutputPriceUsd,
+                SupportsInvoice = site.SupportsInvoice,
+                SupportsRefund = site.SupportsRefund,
+                HasDocs = site.HasDocs,
+                UpdatedAt = offer.UpdatedAt
+            })
+            .ToListAsync(cancellationToken);
+
+        var riskRows = await db.Queryable<RiskEvidenceEntity>()
+            .Where(x => x.ModelId == modelId)
+            .Select(x => new
+            {
+                x.SiteId,
+                x.RiskScore
+            })
+            .ToListAsync(cancellationToken);
+
+        var riskMap = riskRows
+            .GroupBy(x => x.SiteId)
+            .ToDictionary(x => x.Key, x => (decimal?)x.Max(row => row.RiskScore));
+
+        var filtered = offerRows.Select(row =>
+            {
+                var riskScore = riskMap.GetValueOrDefault(row.SiteId);
+                return row with { RiskScore = riskScore };
+            })
+            .Where(row => !query.SupportsInvoice.HasValue || row.SupportsInvoice == query.SupportsInvoice.Value)
+            .Where(row => !query.SupportsRefund.HasValue || row.SupportsRefund == query.SupportsRefund.Value)
+            .Where(row => !query.HasDocs.HasValue || row.HasDocs == query.HasDocs.Value)
+            .Where(row => query.RiskFilter != "exclude-high" || row.RiskScore is null || row.RiskScore < 51)
+            .Where(row => query.RiskFilter != "only-low-risk" || row.RiskScore is <= 20)
+            .OrderBy(row => (row.EffectiveInputPriceUsd ?? 999999m) + (row.EffectiveOutputPriceUsd ?? 999999m))
+            .ToList();
+
+        var items = filtered
+            .Skip((Math.Max(query.Page, 1) - 1) * Math.Clamp(query.PageSize, 1, 200))
+            .Take(Math.Clamp(query.PageSize, 1, 200))
+            .Select(row => new ModelRankingRow
+            {
+                SiteId = row.SiteId,
+                SiteSlug = row.SiteSlug,
+                SiteName = row.SiteName,
+                EffectiveInputPriceUsd = row.EffectiveInputPriceUsd,
+                EffectiveOutputPriceUsd = row.EffectiveOutputPriceUsd,
+                Availability24h = null,
+                Stability7d = null,
+                SpeedScore = null,
+                RiskScore = row.RiskScore,
+                SupportsInvoice = row.SupportsInvoice,
+                SupportsRefund = row.SupportsRefund,
+                HasDocs = row.HasDocs
+            })
+            .ToList();
+
+        return new OfferRankingFallback(
+            items,
+            filtered.Count,
+            filtered.Count == 0 ? null : filtered.Max(row => row.UpdatedAt));
+    }
+
     private static string ResolveRiskLevel(decimal? riskScore)
     {
         var score = riskScore ?? 0;
@@ -244,6 +333,8 @@ public sealed class ModelRankingSnapshotRepository(ISqlSugarClient db, IRelaySit
 
     private sealed class ModelRankingRow
     {
+        public ulong SiteId { get; init; }
+
         public string SiteSlug { get; init; } = string.Empty;
 
         public string SiteName { get; init; } = string.Empty;
@@ -265,5 +356,24 @@ public sealed class ModelRankingSnapshotRepository(ISqlSugarClient db, IRelaySit
         public bool SupportsRefund { get; init; }
 
         public bool HasDocs { get; init; }
+    }
+
+    private sealed record OfferRankingFallback(
+        List<ModelRankingRow> Items,
+        int Total,
+        DateTime? SnapshotAt);
+
+    private sealed record OfferRankingRow
+    {
+        public ulong SiteId { get; init; }
+        public string SiteSlug { get; init; } = string.Empty;
+        public string SiteName { get; init; } = string.Empty;
+        public decimal? EffectiveInputPriceUsd { get; init; }
+        public decimal? EffectiveOutputPriceUsd { get; init; }
+        public bool SupportsInvoice { get; init; }
+        public bool SupportsRefund { get; init; }
+        public bool HasDocs { get; init; }
+        public DateTime UpdatedAt { get; init; }
+        public decimal? RiskScore { get; init; }
     }
 }

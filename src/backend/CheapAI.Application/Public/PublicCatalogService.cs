@@ -9,10 +9,9 @@ public sealed class PublicCatalogService(IPublicCatalogRepository publicCatalogR
         return publicCatalogRepository.GetLatestTestsAsync(page, Math.Clamp(pageSize, 1, 200), testType, cancellationToken);
     }
 
-    public async Task<PublicTestRecordDetailResponse> GetTestDetailAsync(ulong id, CancellationToken cancellationToken = default)
+    public Task<PublicTestRecordDetailResponse?> GetTestDetailAsync(string id, CancellationToken cancellationToken = default)
     {
-        return await publicCatalogRepository.GetTestDetailAsync(id, cancellationToken)
-            ?? throw new Common.Exceptions.AppNotFoundException("Test record does not exist.");
+        return publicCatalogRepository.GetTestDetailByPublicIdAsync(id, cancellationToken);
     }
 
     public Task<PagedResult<PublicRelaySiteRankingItemResponse>> GetRelaySitesAsync(int page, int pageSize, CancellationToken cancellationToken = default)

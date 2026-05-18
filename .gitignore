@@ -36,3 +36,6 @@ artifacts/
 .env
 .env.*
 !.env.example
+.temp
+.codex
+.tmp

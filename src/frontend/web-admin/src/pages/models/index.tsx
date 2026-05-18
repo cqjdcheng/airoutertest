@@ -1,7 +1,7 @@
 import { CloudDownloadOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState, type Key } from "react";
 import {
-  DrawerForm,
+  ModalForm,
   ProCard,
   ProFormDigit,
   ProFormSelect,
@@ -9,7 +9,7 @@ import {
   ProFormText,
   ProFormTextArea
 } from "@ant-design/pro-components";
-import { Alert, Button, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, message } from "antd";
+import { Alert, Button, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag, message } from "antd";
 import AuthGuard from "@/components/AuthGuard";
 import AdminPage from "@/components/AdminPage";
 import {
@@ -19,6 +19,7 @@ import {
   importModels,
   previewOpenRouterModels,
   updateModel,
+  updateModelMetadata,
   updateModelStatus,
   type ModelImportPreviewItem,
   type ModelListItem
@@ -26,11 +27,15 @@ import {
 import { getAccessToken } from "@/services/api";
 import { fetchActiveModelProviders, type ModelProviderListItem } from "@/services/model-providers";
 
+type ApiType = "openai" | "anthropic";
+
 type ModelFormValues = {
   providerId?: number;
   slug?: string;
   vendor?: string;
   officialModelId?: string;
+  requestName?: string;
+  apiType?: ApiType;
   displayName?: string;
   description?: string;
   status?: string;
@@ -44,6 +49,7 @@ type ModelFormValues = {
 
 const defaultModelValues: ModelFormValues = {
   status: "active",
+  apiType: "openai",
   isHot: false,
   sortOrder: 1000
 };
@@ -69,12 +75,18 @@ function toNumber(value: unknown) {
   return Number.isFinite(numericValue) ? numericValue : undefined;
 }
 
+function normalizeRequestName(requestName?: string, officialModelId?: string) {
+  const source = (requestName || officialModelId || "").trim();
+  const parts = source.split("/").filter(Boolean);
+  return (parts.at(-1) ?? source).replace(/^~+/, "");
+}
+
 export default function ModelsPage() {
   const [items, setItems] = useState<ModelListItem[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerLoading, setDrawerLoading] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalLoading, setModalLoading] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
   const [importRows, setImportRows] = useState<ModelImportPreviewItem[]>([]);
@@ -89,7 +101,15 @@ export default function ModelsPage() {
     const normalizedKeyword = keyword.trim().toLowerCase();
 
     return items.filter((item) => {
-      const keywordMatched = [item.displayName, item.slug, item.vendor, item.providerName, item.officialModelId]
+      const keywordMatched = [
+        item.displayName,
+        item.slug,
+        item.vendor,
+        item.providerName,
+        item.officialModelId,
+        item.requestName,
+        item.apiType
+      ]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(normalizedKeyword));
       const statusMatched = statusFilter === "all" || item.status === statusFilter;
@@ -120,19 +140,19 @@ export default function ModelsPage() {
       const result = await fetchActiveModelProviders();
       setProviders(result);
     } catch (requestError) {
-      message.warning(`模型提供商加载失败：${(requestError as Error).message}`);
+      message.warning(`模型供应商加载失败：${(requestError as Error).message}`);
     }
   }
 
-  function openCreateDrawer() {
+  function openCreateModal() {
     setEditing(null);
     form.resetFields();
     form.setFieldsValue(defaultModelValues);
-    setDrawerOpen(true);
+    setModalOpen(true);
   }
 
-  async function openEditDrawer(record: ModelListItem) {
-    setDrawerLoading(true);
+  async function openEditModal(record: ModelListItem) {
+    setModalLoading(true);
 
     try {
       const detail = await fetchModel(record.id);
@@ -143,19 +163,23 @@ export default function ModelsPage() {
         ...detail,
         providerId: detail.providerId
       });
-      setDrawerOpen(true);
+      setModalOpen(true);
     } finally {
-      setDrawerLoading(false);
+      setModalLoading(false);
     }
   }
 
   async function submit(values: ModelFormValues) {
+    const officialModelId = values.officialModelId?.trim() ?? "";
+    const requestName = normalizeRequestName(values.requestName, officialModelId);
     const payload = {
       providerId: values.providerId,
       slug: values.slug,
       vendor: values.vendor ?? "",
-      officialModelId: values.officialModelId ?? "",
-      displayName: values.displayName ?? "",
+      officialModelId,
+      requestName,
+      apiType: values.apiType ?? "openai",
+      displayName: values.displayName?.trim() ?? "",
       description: values.description,
       officialInputPriceUsd: toNumber(values.officialInputPriceUsd),
       officialOutputPriceUsd: toNumber(values.officialOutputPriceUsd),
@@ -174,7 +198,7 @@ export default function ModelsPage() {
       message.success("模型已创建");
     }
 
-    setDrawerOpen(false);
+    setModalOpen(false);
     setEditing(null);
     await load();
     return true;
@@ -185,6 +209,23 @@ export default function ModelsPage() {
     await updateModelStatus(record.id, targetStatus);
     message.success(`模型状态已切换为 ${statusLabels[targetStatus] ?? targetStatus}`);
     await load();
+  }
+
+  async function saveMetadata(record: ModelListItem, patch: Partial<Pick<ModelListItem, "isHot" | "sortOrder">>) {
+    const next = {
+      isHot: patch.isHot ?? record.isHot,
+      sortOrder: patch.sortOrder ?? record.sortOrder
+    };
+
+    setItems((current) => current.map((item) => (item.id === record.id ? { ...item, ...next } : item)));
+
+    try {
+      await updateModelMetadata(record.id, next);
+      message.success("模型配置已保存");
+    } catch (requestError) {
+      message.error((requestError as Error).message);
+      await load();
+    }
   }
 
   async function previewImport() {
@@ -216,6 +257,8 @@ export default function ModelsPage() {
           providerName: row.providerName,
           vendor: row.vendor || row.providerName,
           officialModelId: row.officialModelId,
+          requestName: row.requestName,
+          apiType: row.apiType,
           displayName: row.displayName,
           description: row.description,
           status: "active",
@@ -246,12 +289,12 @@ export default function ModelsPage() {
     <AuthGuard>
       <AdminPage
         title="模型目录"
-        subtitle="维护模型主数据、官方价格、首页热门展示和排序权重。"
+        subtitle="维护模型主数据、请求名称、供应商、接口类型、官方价格和首页热门展示。"
         extra={[
           <Button key="import" icon={<CloudDownloadOutlined />} onClick={() => setImportOpen(true)}>
             抓取 OpenRouter
           </Button>,
-          <Button key="create" type="primary" onClick={openCreateDrawer}>
+          <Button key="create" type="primary" onClick={openCreateModal}>
             新增模型
           </Button>,
           <Button key="refresh" onClick={load}>
@@ -269,8 +312,8 @@ export default function ModelsPage() {
           <Space wrap style={{ marginBottom: 16 }}>
             <Input.Search
               allowClear
-              placeholder="搜索模型、厂商、Official ID"
-              style={{ width: 320 }}
+              placeholder="搜索模型、厂商、请求名称、Official ID"
+              style={{ width: 360 }}
               onSearch={setKeyword}
               onChange={(event) => setKeyword(event.target.value)}
             />
@@ -289,7 +332,7 @@ export default function ModelsPage() {
 
           {error ? <Alert type="warning" showIcon message={`模型接口暂不可用：${error}`} style={{ marginBottom: 16 }} /> : null}
 
-          <Table
+          <Table<ModelListItem>
             className="cheapai-admin-table"
             loading={loading}
             rowKey="id"
@@ -306,7 +349,9 @@ export default function ModelsPage() {
                   </div>
                 )
               },
-              { title: "提供商", width: 130, render: (_, record) => record.providerName || record.vendor },
+              { title: "供应商", width: 130, render: (_, record) => record.providerName || record.vendor },
+              { title: "请求名称", dataIndex: "requestName", ellipsis: true },
+              { title: "接口类型", dataIndex: "apiType", width: 100, render: (apiType) => <Tag>{apiType}</Tag> },
               { title: "Official ID", dataIndex: "officialModelId", ellipsis: true },
               {
                 title: "官方价格",
@@ -315,28 +360,57 @@ export default function ModelsPage() {
               },
               {
                 title: "评分",
-                width: 100,
-                render: (_, record) => record.capabilityScore ? `${record.capabilityScore}` : "-"
+                width: 90,
+                render: (_, record) => record.capabilityScore ?? "-"
               },
-              { title: "排序", dataIndex: "sortOrder", width: 80 },
+              {
+                title: "排序",
+                dataIndex: "sortOrder",
+                width: 110,
+                render: (sortOrder, record) => (
+                  <InputNumber
+                    min={0}
+                    max={999999}
+                    precision={0}
+                    size="small"
+                    defaultValue={sortOrder}
+                    onBlur={(event) => {
+                      const nextValue = toNumber(event.target.value) ?? 1000;
+                      if (nextValue !== record.sortOrder) {
+                        void saveMetadata(record, { sortOrder: nextValue });
+                      }
+                    }}
+                    onPressEnter={(event) => {
+                      event.currentTarget.blur();
+                    }}
+                  />
+                )
+              },
               {
                 title: "热门",
                 dataIndex: "isHot",
-                width: 90,
-                render: (isHot: boolean) => isHot ? <Tag color="gold">热门</Tag> : <Tag>普通</Tag>
+                width: 100,
+                render: (isHot, record) => (
+                  <Switch
+                    checked={isHot}
+                    checkedChildren="热门"
+                    unCheckedChildren="普通"
+                    onChange={(checked) => void saveMetadata(record, { isHot: checked })}
+                  />
+                )
               },
               {
                 title: "状态",
                 dataIndex: "status",
                 width: 100,
-                render: (status: string) => <Tag color={statusColors[status] ?? "default"}>{statusLabels[status] ?? status}</Tag>
+                render: (status) => <Tag color={statusColors[status] ?? "default"}>{statusLabels[status] ?? status}</Tag>
               },
               {
                 title: "操作",
                 width: 220,
                 render: (_, record) => (
                   <Space>
-                    <Button type="link" onClick={() => openEditDrawer(record)}>
+                    <Button type="link" onClick={() => openEditModal(record)}>
                       编辑
                     </Button>
                     <Popconfirm
@@ -357,16 +431,16 @@ export default function ModelsPage() {
           />
         </ProCard>
 
-        <DrawerForm<ModelFormValues>
+        <ModalForm<ModelFormValues>
           form={form}
-          open={drawerOpen}
+          open={modalOpen}
           title={editing ? "编辑模型" : "新增模型"}
-          width={600}
-          loading={drawerLoading}
-          drawerProps={{
+          width={680}
+          loading={modalLoading}
+          modalProps={{
             destroyOnClose: false,
-            onClose: () => {
-              setDrawerOpen(false);
+            onCancel: () => {
+              setModalOpen(false);
               setEditing(null);
             }
           }}
@@ -377,20 +451,30 @@ export default function ModelsPage() {
           }}
           onFinish={submit}
         >
-          <ProFormText name="displayName" label="展示名称" rules={[{ required: true, message: "请输入展示名称" }]} />
-          <ProFormText name="slug" label="Slug" />
+          <ProFormText name="displayName" label="模型名称" rules={[{ required: true, message: "请输入模型名称" }]} />
+          <ProFormText name="requestName" label="模型请求名称" rules={[{ required: true, message: "请输入模型请求名称" }]} />
           <ProFormSelect
             name="providerId"
-            label="模型提供商"
+            label="模型供应商"
             showSearch
             options={providers.map((provider) => ({
               label: provider.name,
               value: provider.id
             }))}
-            placeholder="请选择提供商；旧数据可继续使用 Vendor"
+            placeholder="请选择供应商；旧数据可继续使用 Vendor"
           />
-          <ProFormText name="vendor" label="兼容 Vendor" />
+          <ProFormSelect
+            name="apiType"
+            label="接口类型"
+            rules={[{ required: true, message: "请选择接口类型" }]}
+            options={[
+              { label: "OpenAI", value: "openai" },
+              { label: "Anthropic", value: "anthropic" }
+            ]}
+          />
           <ProFormText name="officialModelId" label="Official ID" rules={[{ required: true, message: "请输入 Official ID" }]} />
+          <ProFormText name="vendor" label="兼容 Vendor" />
+          <ProFormText name="slug" label="Slug" />
           <ProFormTextArea name="description" label="模型说明" fieldProps={{ rows: 4 }} />
           <ProFormSelect
             name="status"
@@ -407,12 +491,12 @@ export default function ModelsPage() {
           <ProFormDigit name="officialOutputPriceUsd" label="官方输出价 USD" fieldProps={{ precision: 6 }} />
           <ProFormDigit name="capabilityScore" label="能力评分" min={0} max={100} fieldProps={{ precision: 2 }} />
           <ProFormText name="capabilitySource" label="评分来源" />
-        </DrawerForm>
+        </ModalForm>
 
         <Modal
           title="从 OpenRouter 抓取主流模型"
           open={importOpen}
-          width={920}
+          width={980}
           confirmLoading={importLoading}
           onOk={submitImport}
           onCancel={() => setImportOpen(false)}
@@ -422,7 +506,7 @@ export default function ModelsPage() {
             type="info"
             showIcon
             message="数据来源：OpenRouter 官方 /api/v1/models"
-            description="价格按 USD / 1M tokens 换算；评分基于 OpenRouter 返回的上下文、工具调用、推理、结构化输出和多模态字段生成。"
+            description="模型名称用于展示，模型请求名称用于真实请求；价格按 USD / 1M tokens 换算，评分基于 OpenRouter 返回的能力字段生成。"
             style={{ marginBottom: 16 }}
           />
           <Space wrap style={{ marginBottom: 16 }}>
@@ -440,8 +524,10 @@ export default function ModelsPage() {
               onChange: (keys) => setSelectedImportIds(keys)
             }}
             columns={[
-              { title: "模型", dataIndex: "displayName" },
-              { title: "提供商", dataIndex: "providerName", width: 130 },
+              { title: "模型名称", dataIndex: "displayName" },
+              { title: "供应商", dataIndex: "providerName", width: 130 },
+              { title: "请求名称", dataIndex: "requestName", ellipsis: true },
+              { title: "接口类型", dataIndex: "apiType", width: 100 },
               { title: "Official ID", dataIndex: "officialModelId", ellipsis: true },
               { title: "官方输入价", dataIndex: "officialInputPriceUsd", width: 120, render: (value?: number) => value ?? "-" },
               { title: "官方输出价", dataIndex: "officialOutputPriceUsd", width: 120, render: (value?: number) => value ?? "-" },

@@ -42,11 +42,20 @@ public sealed class PublicSitePricingResponse
 
 public sealed class PublicSiteLatestTestResponse
 {
+    public ulong Id { get; init; }
+    public string PublicId { get; init; } = string.Empty;
     public string ModelSlug { get; init; } = string.Empty;
     public string ModelName { get; init; } = string.Empty;
+    public string TestType { get; init; } = string.Empty;
+    public string Status { get; init; } = string.Empty;
+    public int? FirstTokenMs { get; init; }
+    public int? FullResponseMs { get; init; }
     public decimal? Availability24h { get; init; }
     public decimal? Stability7d { get; init; }
     public decimal? RiskScore { get; init; }
+    public string RiskLevel { get; init; } = "low";
+    public string? ErrorMessage { get; init; }
+    public DateTime? TestedAt { get; init; }
 }
 
 public sealed class PublicSiteRiskSummaryResponse
