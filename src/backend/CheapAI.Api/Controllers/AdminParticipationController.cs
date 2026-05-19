@@ -79,4 +79,32 @@ public sealed class AdminParticipationController(AdminParticipationService admin
         await adminParticipationService.DeleteArticleAsync(id, cancellationToken);
         return Ok(ApiResponseFactory.Success(HttpContext));
     }
+
+    [HttpGet("article-tags")]
+    public async Task<IActionResult> GetArticleTags(CancellationToken cancellationToken)
+    {
+        var result = await adminParticipationService.GetArticleTagsAsync(cancellationToken);
+        return Ok(ApiResponseFactory.Success(HttpContext, result));
+    }
+
+    [HttpPost("article-tags")]
+    public async Task<IActionResult> CreateArticleTag([FromBody] UpsertArticleTagRequest request, CancellationToken cancellationToken)
+    {
+        var id = await adminParticipationService.CreateArticleTagAsync(request, cancellationToken);
+        return Ok(ApiResponseFactory.Success(HttpContext, new { id }));
+    }
+
+    [HttpPut("article-tags/{id}")]
+    public async Task<IActionResult> UpdateArticleTag(ulong id, [FromBody] UpsertArticleTagRequest request, CancellationToken cancellationToken)
+    {
+        await adminParticipationService.UpdateArticleTagAsync(id, request, cancellationToken);
+        return Ok(ApiResponseFactory.Success(HttpContext));
+    }
+
+    [HttpDelete("article-tags/{id}")]
+    public async Task<IActionResult> DeleteArticleTag(ulong id, CancellationToken cancellationToken)
+    {
+        await adminParticipationService.DeleteArticleTagAsync(id, cancellationToken);
+        return Ok(ApiResponseFactory.Success(HttpContext));
+    }
 }

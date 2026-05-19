@@ -40,14 +40,19 @@ public sealed class PublicParticipationService(
         return participationRepository.GetCapabilityRankingAsync(cancellationToken);
     }
 
-    public Task<PagedResult<ArticleListItemResponse>> GetArticlesAsync(int page, int pageSize, CancellationToken cancellationToken = default)
+    public Task<PagedResult<ArticleListItemResponse>> GetArticlesAsync(int page, int pageSize, string? tagSlug = null, CancellationToken cancellationToken = default)
     {
-        return participationRepository.GetArticlesAsync(page, pageSize, true, cancellationToken);
+        return participationRepository.GetArticlesAsync(page, pageSize, true, tagSlug, cancellationToken);
     }
 
     public async Task<ArticleDetailResponse> GetArticleBySlugAsync(string slug, CancellationToken cancellationToken = default)
     {
         return await participationRepository.GetArticleBySlugAsync(slug, true, cancellationToken)
             ?? throw new AppNotFoundException("Article does not exist.");
+    }
+
+    public Task<IReadOnlyList<ArticleTagResponse>> GetArticleTagsAsync(CancellationToken cancellationToken = default)
+    {
+        return participationRepository.GetArticleTagsAsync(cancellationToken);
     }
 }

@@ -1,4 +1,5 @@
 using CheapAI.Application.Common.Paging;
+using CheapAI.Application.Common.Exceptions;
 using CheapAI.Application.Participation;
 using CheapAI.Application.RelaySites;
 using CheapAI.Infrastructure.Persistence.Entities;
@@ -209,7 +210,7 @@ public sealed class ParticipationRepository(ISqlSugarClient db, IOptions<MySqlOp
         }).ToList();
     }
 
-    public async Task<PagedResult<ArticleListItemResponse>> GetArticlesAsync(int page, int pageSize, bool publicOnly, CancellationToken cancellationToken = default)
+    public async Task<PagedResult<ArticleListItemResponse>> GetArticlesAsync(int page, int pageSize, bool publicOnly, string? tagSlug = null, CancellationToken cancellationToken = default)
     {
         var query = db.Queryable<ArticleEntity>();
         if (publicOnly)
@@ -219,6 +220,20 @@ public sealed class ParticipationRepository(ISqlSugarClient db, IOptions<MySqlOp
         else
         {
             query = query.Where(x => x.Status != "archived");
+        }
+
+        if (!string.IsNullOrWhiteSpace(tagSlug))
+        {
+            var normalizedTagSlug = tagSlug.Trim();
+            var articleIds = await db.Queryable<ArticleTagMapEntity, ArticleTagEntity>(
+                    (map, tag) => map.TagId == tag.Id)
+                .Where((map, tag) => tag.DeletedAt == null && tag.Slug == normalizedTagSlug)
+                .Select((map, tag) => map.ArticleId)
+                .ToListAsync(cancellationToken);
+
+            query = articleIds.Count == 0
+                ? query.Where(x => false)
+                : query.Where(x => articleIds.Contains(x.Id));
         }
 
         RefAsync<int> total = 0;
@@ -236,7 +251,7 @@ public sealed class ParticipationRepository(ISqlSugarClient db, IOptions<MySqlOp
             })
             .ToPageListAsync(page, pageSize, total, cancellationToken);
 
-        return ToPaged(items, page, pageSize, total);
+        return ToPaged(await AttachArticleTagsAsync(items, cancellationToken), page, pageSize, total);
     }
 
     public async Task<ArticleDetailResponse?> GetArticleBySlugAsync(string slug, bool publicOnly, CancellationToken cancellationToken = default)
@@ -248,19 +263,19 @@ public sealed class ParticipationRepository(ISqlSugarClient db, IOptions<MySqlOp
         }
 
         var entity = await query.FirstAsync(cancellationToken);
-        return entity is null ? null : MapArticleDetail(entity);
+        return entity is null ? null : await AttachArticleTagsAsync(MapArticleDetail(entity), cancellationToken);
     }
 
     public async Task<ArticleDetailResponse?> GetArticleByIdAsync(ulong id, CancellationToken cancellationToken = default)
     {
         var entity = await db.Queryable<ArticleEntity>().FirstAsync(x => x.Id == id, cancellationToken);
-        return entity is null ? null : MapArticleDetail(entity);
+        return entity is null ? null : await AttachArticleTagsAsync(MapArticleDetail(entity), cancellationToken);
     }
 
     public async Task<ulong> CreateArticleAsync(CreateArticleRequest request, CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;
-        return (ulong)await db.Insertable(new ArticleEntity
+        var articleId = (ulong)await db.Insertable(new ArticleEntity
         {
             Slug = request.Slug,
             Title = request.Title,
@@ -271,11 +286,14 @@ public sealed class ParticipationRepository(ISqlSugarClient db, IOptions<MySqlOp
             CreatedAt = now,
             UpdatedAt = now
         }).ExecuteReturnBigIdentityAsync();
+
+        await ReplaceArticleTagsAsync(articleId, request.TagIds, cancellationToken);
+        return articleId;
     }
 
-    public Task UpdateArticleAsync(ulong id, UpdateArticleRequest request, CancellationToken cancellationToken = default)
+    public async Task UpdateArticleAsync(ulong id, UpdateArticleRequest request, CancellationToken cancellationToken = default)
     {
-        return db.Updateable<ArticleEntity>()
+        var affected = await db.Updateable<ArticleEntity>()
             .SetColumns(x => new ArticleEntity
             {
                 Slug = request.Slug,
@@ -288,6 +306,13 @@ public sealed class ParticipationRepository(ISqlSugarClient db, IOptions<MySqlOp
             })
             .Where(x => x.Id == id)
             .ExecuteCommandAsync(cancellationToken);
+
+        if (affected == 0)
+        {
+            throw new AppNotFoundException("Article does not exist.");
+        }
+
+        await ReplaceArticleTagsAsync(id, request.TagIds, cancellationToken);
     }
 
     public Task UpdateArticleStatusAsync(ulong id, string status, CancellationToken cancellationToken = default)
@@ -306,6 +331,71 @@ public sealed class ParticipationRepository(ISqlSugarClient db, IOptions<MySqlOp
     public Task DeleteArticleAsync(ulong id, CancellationToken cancellationToken = default)
     {
         return UpdateArticleStatusAsync(id, "archived", cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ArticleTagResponse>> GetArticleTagsAsync(CancellationToken cancellationToken = default)
+    {
+        return await db.Queryable<ArticleTagEntity>()
+            .Where(x => x.DeletedAt == null)
+            .OrderBy(x => x.SortOrder, OrderByType.Asc)
+            .OrderBy(x => x.Id, OrderByType.Desc)
+            .Select(x => new ArticleTagResponse
+            {
+                Id = x.Id,
+                Slug = x.Slug,
+                Name = x.Name,
+                SortOrder = x.SortOrder
+            })
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<ulong> CreateArticleTagAsync(UpsertArticleTagRequest request, CancellationToken cancellationToken = default)
+    {
+        var now = DateTime.UtcNow;
+        return (ulong)await db.Insertable(new ArticleTagEntity
+        {
+            Slug = SlugHelper.Normalize(request.Slug, request.Name),
+            Name = request.Name.Trim(),
+            SortOrder = request.SortOrder,
+            CreatedAt = now,
+            UpdatedAt = now
+        }).ExecuteReturnBigIdentityAsync();
+    }
+
+    public async Task UpdateArticleTagAsync(ulong id, UpsertArticleTagRequest request, CancellationToken cancellationToken = default)
+    {
+        var affected = await db.Updateable<ArticleTagEntity>()
+            .SetColumns(x => new ArticleTagEntity
+            {
+                Slug = SlugHelper.Normalize(request.Slug, request.Name),
+                Name = request.Name.Trim(),
+                SortOrder = request.SortOrder,
+                UpdatedAt = DateTime.UtcNow
+            })
+            .Where(x => x.Id == id && x.DeletedAt == null)
+            .ExecuteCommandAsync(cancellationToken);
+
+        if (affected == 0)
+        {
+            throw new AppNotFoundException("Article tag does not exist.");
+        }
+    }
+
+    public async Task DeleteArticleTagAsync(ulong id, CancellationToken cancellationToken = default)
+    {
+        var affected = await db.Updateable<ArticleTagEntity>()
+            .SetColumns(x => new ArticleTagEntity
+            {
+                DeletedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            })
+            .Where(x => x.Id == id && x.DeletedAt == null)
+            .ExecuteCommandAsync(cancellationToken);
+
+        if (affected == 0)
+        {
+            throw new AppNotFoundException("Article tag does not exist.");
+        }
     }
 
     private async Task<TestRecordEntity> CreateUnifiedTestRecordAsync(
@@ -480,6 +570,106 @@ public sealed class ParticipationRepository(ISqlSugarClient db, IOptions<MySqlOp
         };
     }
 
+    private async Task<List<ArticleListItemResponse>> AttachArticleTagsAsync(
+        IReadOnlyList<ArticleListItemResponse> articles,
+        CancellationToken cancellationToken)
+    {
+        if (articles.Count == 0)
+        {
+            return [];
+        }
+
+        var tagMap = await LoadArticleTagMapAsync(articles.Select(x => x.Id).ToList(), cancellationToken);
+        return articles.Select(article => new ArticleListItemResponse
+        {
+            Id = article.Id,
+            Slug = article.Slug,
+            Title = article.Title,
+            Summary = article.Summary,
+            Status = article.Status,
+            PublishedAt = article.PublishedAt,
+            Tags = tagMap.GetValueOrDefault(article.Id) ?? []
+        }).ToList();
+    }
+
+    private async Task<ArticleDetailResponse> AttachArticleTagsAsync(
+        ArticleDetailResponse article,
+        CancellationToken cancellationToken)
+    {
+        var tagMap = await LoadArticleTagMapAsync([article.Id], cancellationToken);
+        return new ArticleDetailResponse
+        {
+            Id = article.Id,
+            Slug = article.Slug,
+            Title = article.Title,
+            Summary = article.Summary,
+            ContentMd = article.ContentMd,
+            Status = article.Status,
+            PublishedAt = article.PublishedAt,
+            Tags = tagMap.GetValueOrDefault(article.Id) ?? []
+        };
+    }
+
+    private async Task<Dictionary<ulong, IReadOnlyList<ArticleTagResponse>>> LoadArticleTagMapAsync(
+        IReadOnlyList<ulong> articleIds,
+        CancellationToken cancellationToken)
+    {
+        var rows = await db.Queryable<ArticleTagMapEntity, ArticleTagEntity>(
+                (map, tag) => map.TagId == tag.Id)
+            .Where((map, tag) => articleIds.Contains(map.ArticleId) && tag.DeletedAt == null)
+            .OrderBy((map, tag) => tag.SortOrder, OrderByType.Asc)
+            .Select((map, tag) => new ArticleTagMapRow
+            {
+                ArticleId = map.ArticleId,
+                Id = tag.Id,
+                Slug = tag.Slug,
+                Name = tag.Name,
+                SortOrder = tag.SortOrder
+            })
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .GroupBy(x => x.ArticleId)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<ArticleTagResponse>)group.Select(x => new ArticleTagResponse
+                {
+                    Id = x.Id,
+                    Slug = x.Slug,
+                    Name = x.Name,
+                    SortOrder = x.SortOrder
+                }).ToList());
+    }
+
+    private async Task ReplaceArticleTagsAsync(ulong articleId, IReadOnlyList<ulong> tagIds, CancellationToken cancellationToken)
+    {
+        await db.Deleteable<ArticleTagMapEntity>()
+            .Where(x => x.ArticleId == articleId)
+            .ExecuteCommandAsync(cancellationToken);
+
+        var normalizedTagIds = tagIds.Where(x => x > 0).Distinct().ToList();
+        if (normalizedTagIds.Count == 0)
+        {
+            return;
+        }
+
+        var existingTagIds = await db.Queryable<ArticleTagEntity>()
+            .Where(x => x.DeletedAt == null && normalizedTagIds.Contains(x.Id))
+            .Select(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        if (existingTagIds.Count == 0)
+        {
+            return;
+        }
+
+        await db.Insertable(existingTagIds.Select(tagId => new ArticleTagMapEntity
+        {
+            ArticleId = articleId,
+            TagId = tagId
+        }).ToList()).ExecuteCommandAsync(cancellationToken);
+    }
+
     private static PagedResult<T> ToPaged<T>(IReadOnlyList<T> items, int page, int pageSize, long total)
     {
         return new PagedResult<T>
@@ -498,5 +688,18 @@ public sealed class ParticipationRepository(ISqlSugarClient db, IOptions<MySqlOp
         public string? Source { get; init; }
         public decimal? CapabilityScore { get; init; }
         public DateTime? SnapshotAt { get; init; }
+    }
+
+    private sealed class ArticleTagMapRow
+    {
+        public ulong ArticleId { get; init; }
+
+        public ulong Id { get; init; }
+
+        public string Slug { get; init; } = string.Empty;
+
+        public string Name { get; init; } = string.Empty;
+
+        public int SortOrder { get; init; }
     }
 }

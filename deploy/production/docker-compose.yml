@@ -27,9 +27,7 @@ services:
       - redis-data:/data
 
   api:
-    build:
-      context: ./source
-      dockerfile: deploy/production/Dockerfile.api
+    image: realllmcn-api:latest
     container_name: cheapai-api
     restart: unless-stopped
     depends_on:
@@ -46,14 +44,14 @@ services:
       CheapAi__BootstrapAdmin__Enabled: "true"
       CheapAi__BootstrapAdmin__Username: admin
       CheapAi__BootstrapAdmin__Password: ${CHEAPAI_BOOTSTRAP_ADMIN_PASSWORD}
-      CheapAi__BootstrapAdmin__DisplayName: 系统管理员
+      CheapAi__BootstrapAdmin__DisplayName: "System Administrator"
     ports:
       - "127.0.0.1:18080:8080"
+    volumes:
+      - uploads-data:/app/wwwroot/uploads
 
   jobs:
-    build:
-      context: ./source
-      dockerfile: deploy/production/Dockerfile.jobs
+    image: realllmcn-jobs:latest
     container_name: cheapai-jobs
     restart: unless-stopped
     depends_on:
@@ -68,12 +66,7 @@ services:
       CheapAi__Jwt__SigningKey: ${CHEAPAI_JWT_SIGNING_KEY}
 
   public-web:
-    build:
-      context: ./source
-      dockerfile: deploy/production/Dockerfile.public
-      args:
-        API_BASE_URL: http://api:8080
-        NEXT_PUBLIC_API_BASE_URL: ""
+    image: realllmcn-public-web:latest
     container_name: cheapai-public-web
     restart: unless-stopped
     depends_on:
@@ -85,11 +78,7 @@ services:
       - "127.0.0.1:13000:3000"
 
   admin-web:
-    build:
-      context: ./source
-      dockerfile: deploy/production/Dockerfile.admin
-      args:
-        UMI_APP_API_BASE_URL: ""
+    image: realllmcn-admin-web:latest
     container_name: cheapai-admin-web
     restart: unless-stopped
     depends_on:
@@ -100,3 +89,4 @@ services:
 volumes:
   mysql-data:
   redis-data:
+  uploads-data:

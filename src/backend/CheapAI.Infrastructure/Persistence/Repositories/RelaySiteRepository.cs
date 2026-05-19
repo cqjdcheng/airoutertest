@@ -228,6 +228,7 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
                 BonusRatio = offer.BonusRatio,
                 SourceType = offer.SourceType,
                 Status = offer.Status,
+                AutoTestEnabled = offer.AutoTestEnabled,
                 CrawledAt = offer.CrawledAt,
                 ReviewedAt = offer.ReviewedAt
             })
@@ -286,6 +287,7 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
                 EffectiveInputPriceUsd = CalculateEffective(offer.SiteInputPriceUsd, rechargeRatio, offer.BonusRatio),
                 EffectiveOutputPriceUsd = CalculateEffective(offer.SiteOutputPriceUsd, rechargeRatio, offer.BonusRatio),
                 Status = string.IsNullOrWhiteSpace(offer.Status) ? "active" : offer.Status,
+                AutoTestEnabled = offer.AutoTestEnabled,
                 ReviewedAt = now,
                 CreatedAt = now,
                 UpdatedAt = now

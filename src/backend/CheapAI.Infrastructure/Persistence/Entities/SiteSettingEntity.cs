@@ -14,6 +14,9 @@ public sealed class SiteSettingEntity
     [SugarColumn(ColumnName = "site_icon_url", IsNullable = true)]
     public string? SiteIconUrl { get; set; }
 
+    [SugarColumn(ColumnName = "favicon_url", IsNullable = true)]
+    public string? FaviconUrl { get; set; }
+
     [SugarColumn(ColumnName = "created_at")]
     public DateTime CreatedAt { get; set; }
 

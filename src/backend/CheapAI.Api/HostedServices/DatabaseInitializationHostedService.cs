@@ -89,6 +89,9 @@ public sealed class DatabaseInitializationHostedService(
         await EnsureUnifiedTestRecordColumnsAsync(cancellationToken);
         await EnsureModelDisplayColumnsAsync(cancellationToken);
         await EnsureRelaySiteAutoTestColumnsAsync(cancellationToken);
+        await EnsureRelayOfferAutoTestColumnsAsync(cancellationToken);
+        await EnsureArticleTagSchemaAsync(cancellationToken);
+        await EnsureSiteSettingsBrandColumnsAsync(cancellationToken);
     }
 
     private async Task EnsureModelProviderSchemaAsync(CancellationToken cancellationToken)
@@ -340,6 +343,78 @@ public sealed class DatabaseInitializationHostedService(
             alterCommand.CommandText = column.Definition;
             await alterCommand.ExecuteNonQueryAsync(cancellationToken);
         }
+    }
+
+    private async Task EnsureRelayOfferAutoTestColumnsAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(mySqlOptions.Value.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        if (!await TableExistsAsync(connection, "relay_offers", cancellationToken) ||
+            await ColumnExistsAsync(connection, "relay_offers", "auto_test_enabled", cancellationToken))
+        {
+            return;
+        }
+
+        await using var alterCommand = connection.CreateCommand();
+        alterCommand.CommandText = "ALTER TABLE relay_offers ADD COLUMN auto_test_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER status;";
+        await alterCommand.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async Task EnsureArticleTagSchemaAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(mySqlOptions.Value.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        if (!await TableExistsAsync(connection, "article_tags", cancellationToken))
+        {
+            await using var createTagsCommand = connection.CreateCommand();
+            createTagsCommand.CommandText = """
+                CREATE TABLE IF NOT EXISTS article_tags (
+                  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                  slug VARCHAR(128) NOT NULL,
+                  name VARCHAR(128) NOT NULL,
+                  sort_order INT NOT NULL DEFAULT 1000,
+                  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+                  deleted_at DATETIME(3) NULL,
+                  PRIMARY KEY (id),
+                  UNIQUE KEY uk_article_tags_slug (slug),
+                  KEY idx_article_tags_deleted_sort (deleted_at, sort_order)
+                );
+                """;
+            await createTagsCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        if (!await TableExistsAsync(connection, "article_tag_maps", cancellationToken))
+        {
+            await using var createMapsCommand = connection.CreateCommand();
+            createMapsCommand.CommandText = """
+                CREATE TABLE IF NOT EXISTS article_tag_maps (
+                  article_id BIGINT UNSIGNED NOT NULL,
+                  tag_id BIGINT UNSIGNED NOT NULL,
+                  PRIMARY KEY (article_id, tag_id),
+                  KEY idx_article_tag_maps_tag (tag_id)
+                );
+                """;
+            await createMapsCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
+    private async Task EnsureSiteSettingsBrandColumnsAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(mySqlOptions.Value.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        if (!await TableExistsAsync(connection, "site_settings", cancellationToken) ||
+            await ColumnExistsAsync(connection, "site_settings", "favicon_url", cancellationToken))
+        {
+            return;
+        }
+
+        await using var alterCommand = connection.CreateCommand();
+        alterCommand.CommandText = "ALTER TABLE site_settings ADD COLUMN favicon_url VARCHAR(512) NULL AFTER site_icon_url;";
+        await alterCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task<bool> TableExistsAsync(MySqlConnection connection, string tableName, CancellationToken cancellationToken)

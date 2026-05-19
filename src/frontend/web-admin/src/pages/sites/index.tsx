@@ -7,7 +7,7 @@ import {
   ProFormText,
   ProFormTextArea
 } from "@ant-design/pro-components";
-import { Alert, Button, Empty, Form, Input, Modal, Popconfirm, Select, Space, Table, Tabs, Tag, message } from "antd";
+import { Alert, Button, Empty, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Tag, message } from "antd";
 import AuthGuard from "@/components/AuthGuard";
 import AdminPage from "@/components/AdminPage";
 import { fetchModels, previewModelImport, type ModelListItem } from "@/services/models";
@@ -25,6 +25,7 @@ import {
   type RelayPricingPreviewItem
 } from "@/services/sites";
 import SiteDetailContent from "./SiteDetailContent";
+import { formatBeijingTime } from "@/utils/time";
 
 type SiteFormValues = {
   slug?: string;
@@ -117,7 +118,8 @@ function normalizeOffers(offers: RelaySiteOffer[] | undefined, models: ModelList
       rechargeRatio,
       bonusRatio,
       sourceType: offer.sourceType || "manual",
-      status: offer.status || "active"
+      status: offer.status || "active",
+      autoTestEnabled: Boolean(offer.autoTestEnabled)
     };
     });
 }
@@ -398,7 +400,8 @@ export default function SitesPage() {
           siteInputPriceUsd: row.officialInputPriceUsd,
           siteOutputPriceUsd: row.officialOutputPriceUsd,
           sourceType: "manual",
-          status: "active"
+          status: "active",
+          autoTestEnabled: false
         })));
       setSelectedOfferRows([]);
       message.success(`已抓取 ${rows.length} 个模型`);
@@ -446,7 +449,8 @@ export default function SitesPage() {
       siteInputPriceUsd: isPerCall ? row.sitePerCallPriceUsd : row.siteInputPriceUsd,
       siteOutputPriceUsd: isPerCall ? undefined : row.siteOutputPriceUsd,
       sourceType: "crawl",
-      status: "active"
+      status: "active",
+      autoTestEnabled: false
     };
   }
 
@@ -501,7 +505,8 @@ export default function SitesPage() {
     offerForm.setFieldsValue({
       vendor: importVendor,
       sourceType: "manual",
-      status: "active"
+      status: "active",
+      autoTestEnabled: false
     });
     setOfferModalOpen(true);
   }
@@ -539,7 +544,8 @@ export default function SitesPage() {
       officialModelId: values.officialModelId || values.requestName || values.displayName,
       apiType: values.apiType || "openai",
       sourceType: values.sourceType || "manual",
-      status: values.status || "active"
+      status: values.status || "active",
+      autoTestEnabled: Boolean(values.autoTestEnabled)
     };
 
     if (editingOfferIndex === null) {
@@ -654,7 +660,7 @@ export default function SitesPage() {
                 title: "最后更新时间",
                 dataIndex: "updatedAtUtc",
                 width: 200,
-                render: (value: string | undefined, record) => value ?? record.createdAtUtc
+                render: (value: string | undefined, record) => formatBeijingTime(value ?? record.createdAtUtc)
               },
               {
                 title: "操作",
@@ -883,6 +889,12 @@ export default function SitesPage() {
                             render: (status?: string) => <Tag color={statusColors[status ?? ""] ?? "default"}>{offerStatusOptions.find((item) => item.value === status)?.label ?? status ?? "-"}</Tag>
                           },
                           {
+                            title: "自动测试",
+                            dataIndex: "autoTestEnabled",
+                            width: 110,
+                            render: (enabled?: boolean) => <Tag color={enabled ? "purple" : "default"}>{enabled ? "参与" : "关闭"}</Tag>
+                          },
+                          {
                             title: "操作",
                             width: 150,
                             render: (_, record) => (
@@ -913,6 +925,7 @@ export default function SitesPage() {
               open={offerModalOpen}
               title={editingOfferIndex === null ? "新增模型价格" : "编辑模型价格"}
               width={720}
+              forceRender
               maskClosable={false}
               onCancel={() => {
                 setOfferModalOpen(false);
@@ -954,6 +967,9 @@ export default function SitesPage() {
                   </Form.Item>
                   <Form.Item name="status" label="状态" style={{ width: 120 }}>
                     <Select options={offerStatusOptions} />
+                  </Form.Item>
+                  <Form.Item name="autoTestEnabled" label="自动测试" valuePropName="checked" style={{ width: 120 }}>
+                    <Switch />
                   </Form.Item>
                 </Space>
                 <Form.Item name="modelSlug" hidden>

@@ -77,6 +77,47 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
         return ToPaged(items, query, total);
     }
 
+    public async Task<TestRecordDetailResponse?> GetTestRecordAsync(ulong id, CancellationToken cancellationToken = default)
+    {
+        var row = await db.Queryable<TestRecordEntity, RelaySiteEntity, AiModelEntity>(
+                (record, site, model) => new JoinQueryInfos(
+                    JoinType.Left, record.SiteId == site.Id,
+                    JoinType.Left, record.ModelId == model.Id))
+            .Where((record, site, model) => record.Id == id)
+            .Select((record, site, model) => new AdminTestRecordDetailQueryRow
+            {
+                Id = record.Id,
+                SiteName = site.Name,
+                FallbackSiteName = record.SiteName,
+                SiteUrl = record.SiteUrl,
+                FallbackSiteUrl = record.SiteUrl,
+                ModelName = model.DisplayName,
+                ModelSlug = model.Slug,
+                FallbackModelName = record.ModelName,
+                FallbackModelSlug = record.ModelSlug,
+                TestType = record.TestType,
+                Status = record.Status,
+                FirstTokenMs = record.FirstTokenMs,
+                FullResponseMs = record.FullResponseMs,
+                ErrorMessage = record.ErrorMessage,
+                RiskScore = record.RiskScore,
+                RiskLevel = record.RiskLevel,
+                ResultSummary = record.ResultSummary,
+                MatchScore = record.MatchScore,
+                InputTokens = record.InputTokens,
+                OutputTokens = record.OutputTokens,
+                TotalTokens = record.TotalTokens,
+                EstimatedTokens = record.EstimatedTokens,
+                TokensPerSecond = record.TokensPerSecond,
+                IsStream = record.IsStream,
+                ChecksJson = record.ChecksJson,
+                TestedAt = record.TestedAt
+            })
+            .FirstAsync(cancellationToken);
+
+        return row is null ? null : MapAdminTestRecordDetail(row);
+    }
+
     public async Task<PagedResult<RiskEvidenceListItemResponse>> GetRisksAsync(OperationListQuery query, CancellationToken cancellationToken = default)
     {
         RefAsync<int> total = 0;
@@ -167,6 +208,41 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
             .ToPageListAsync(query.Page, query.PageSize, total, cancellationToken);
 
         return ToPaged(items, query, total);
+    }
+
+    public async Task<IReadOnlyList<ScheduledJobResponse>> GetScheduledJobsAsync(CancellationToken cancellationToken = default)
+    {
+        var logs = await db.Queryable<JobExecutionLogEntity>()
+            .OrderBy(x => x.CreatedAt, OrderByType.Desc)
+            .ToListAsync(cancellationToken);
+
+        var now = DateTime.UtcNow;
+        return
+        [
+            BuildScheduledJob("price-crawl", "价格抓取", "Quartz 每小时执行一次；后台也可手动触发。", logs, now.AddHours(1)),
+            BuildScheduledJob("test", "中转自动测试", "Quartz 每分钟扫描一次；仅测试已启用自动测试、配置测试 Key、且模型报价也开启自动测试的记录；单站点按测试间隔到期后执行，最低 15 分钟。", logs, now.AddMinutes(1)),
+            BuildScheduledJob("risk", "风险重算", "Quartz 每小时执行一次；按最新测试记录重算风险证据。", logs, now.AddHours(1)),
+            BuildScheduledJob("ranking", "排行重建", "Quartz 每小时执行一次；重建价格、稳定性和综合排行快照。", logs, now.AddHours(1))
+        ];
+    }
+
+    private static ScheduledJobResponse BuildScheduledJob(
+        string category,
+        string name,
+        string rule,
+        IReadOnlyList<JobExecutionLogEntity> logs,
+        DateTime nextRunAt)
+    {
+        var last = logs.FirstOrDefault(x => x.JobCategory.Equals(category, StringComparison.OrdinalIgnoreCase));
+        return new ScheduledJobResponse
+        {
+            Key = category,
+            Name = name,
+            Rule = rule,
+            Status = "enabled",
+            LastRunAt = last?.FinishedAt ?? last?.StartedAt ?? last?.CreatedAt,
+            NextRunAt = nextRunAt
+        };
     }
 
     public async Task VerifyOfferAsync(ulong id, CancellationToken cancellationToken = default)
@@ -280,6 +356,7 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
                 site.AutoTestEnabled &&
                 site.TestApiKey != null &&
                 site.TestApiKey != "" &&
+                offer.AutoTestEnabled &&
                 model.DeletedAt == null)
             .Select((offer, site, model) => new PlatformTestOfferRow
             {
@@ -291,6 +368,7 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
                 TestApiKey = site.TestApiKey!,
                 TestIntervalMinutes = site.TestIntervalMinutes,
                 LastAutoTestAt = site.LastAutoTestAt,
+                OfferId = offer.Id,
                 ModelSlug = model.Slug,
                 ModelName = model.DisplayName,
                 RequestName = model.RequestName,
@@ -621,6 +699,55 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
         };
     }
 
+    private static TestRecordDetailResponse MapAdminTestRecordDetail(AdminTestRecordDetailQueryRow row)
+    {
+        return new TestRecordDetailResponse
+        {
+            Id = row.Id,
+            SiteName = FirstNonEmpty(row.SiteName, row.FallbackSiteName, row.FallbackSiteUrl, "未知站点"),
+            SiteUrl = row.SiteUrl,
+            ModelName = FirstNonEmpty(row.ModelName, row.FallbackModelName, row.FallbackModelSlug, "未知模型"),
+            ModelSlug = FirstNonEmpty(row.ModelSlug, row.FallbackModelSlug),
+            TestType = row.TestType,
+            Status = row.Status,
+            FirstTokenMs = row.FirstTokenMs,
+            FullResponseMs = row.FullResponseMs,
+            ErrorMessage = row.ErrorMessage,
+            RiskScore = row.RiskScore,
+            RiskLevel = row.RiskLevel,
+            ResultSummary = row.ResultSummary,
+            MatchScore = row.MatchScore,
+            InputTokens = row.InputTokens,
+            OutputTokens = row.OutputTokens,
+            TotalTokens = row.TotalTokens,
+            EstimatedTokens = row.EstimatedTokens,
+            TokensPerSecond = row.TokensPerSecond,
+            IsStream = row.IsStream,
+            Checks = ParseChecks(row.ChecksJson),
+            TestedAt = row.TestedAt
+        };
+    }
+
+    private static IReadOnlyList<TestProbeResultResponse> ParseChecks(string? checksJson)
+    {
+        if (string.IsNullOrWhiteSpace(checksJson))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<IReadOnlyList<TestProbeResultResponse>>(checksJson, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            }) ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
     private static string FirstNonEmpty(params string?[] values)
     {
         return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
@@ -641,7 +768,7 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
-    private sealed class AdminTestRecordQueryRow
+    private class AdminTestRecordQueryRow
     {
         public ulong Id { get; init; }
 
@@ -668,6 +795,35 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
         public string? ErrorMessage { get; init; }
 
         public DateTime TestedAt { get; init; }
+    }
+
+    private sealed class AdminTestRecordDetailQueryRow : AdminTestRecordQueryRow
+    {
+        public string? SiteUrl { get; init; }
+
+        public string? ModelSlug { get; init; }
+
+        public decimal RiskScore { get; init; }
+
+        public string RiskLevel { get; init; } = "low";
+
+        public string? ResultSummary { get; init; }
+
+        public decimal MatchScore { get; init; }
+
+        public int? InputTokens { get; init; }
+
+        public int? OutputTokens { get; init; }
+
+        public int? TotalTokens { get; init; }
+
+        public int EstimatedTokens { get; init; }
+
+        public decimal? TokensPerSecond { get; init; }
+
+        public bool IsStream { get; init; }
+
+        public string? ChecksJson { get; init; }
     }
 
     private sealed class RankingBuildRow
@@ -700,6 +856,8 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
         public ulong ModelId { get; init; }
 
         public ulong? ChannelId { get; init; }
+
+        public ulong OfferId { get; init; }
 
         public string SiteUrl { get; init; } = string.Empty;
 

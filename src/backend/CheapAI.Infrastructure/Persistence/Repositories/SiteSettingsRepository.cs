@@ -21,6 +21,7 @@ public sealed class SiteSettingsRepository(ISqlSugarClient db) : ISiteSettingsRe
         var now = DateTime.UtcNow;
         var siteName = request.SiteName.Trim();
         var siteIconUrl = string.IsNullOrWhiteSpace(request.SiteIconUrl) ? null : request.SiteIconUrl.Trim();
+        var faviconUrl = string.IsNullOrWhiteSpace(request.FaviconUrl) ? null : request.FaviconUrl.Trim();
 
         var existing = await db.Queryable<SiteSettingEntity>()
             .FirstAsync(x => x.Id == SingletonId, cancellationToken);
@@ -32,6 +33,7 @@ public sealed class SiteSettingsRepository(ISqlSugarClient db) : ISiteSettingsRe
                 Id = SingletonId,
                 SiteName = siteName,
                 SiteIconUrl = siteIconUrl,
+                FaviconUrl = faviconUrl,
                 CreatedAt = now,
                 UpdatedAt = now,
                 UpdatedBy = adminUserId
@@ -44,6 +46,7 @@ public sealed class SiteSettingsRepository(ISqlSugarClient db) : ISiteSettingsRe
             {
                 SiteName = siteName,
                 SiteIconUrl = siteIconUrl,
+                FaviconUrl = faviconUrl,
                 UpdatedAt = now,
                 UpdatedBy = adminUserId
             })
@@ -61,7 +64,8 @@ public sealed class SiteSettingsRepository(ISqlSugarClient db) : ISiteSettingsRe
         return new SiteSettingsResponse
         {
             SiteName = entity.SiteName,
-            SiteIconUrl = entity.SiteIconUrl
+            SiteIconUrl = entity.SiteIconUrl,
+            FaviconUrl = entity.FaviconUrl
         };
     }
 }

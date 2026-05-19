@@ -50,6 +50,9 @@ public sealed class RelayOfferEntity
     [SugarColumn(ColumnName = "status")]
     public string Status { get; set; } = "active";
 
+    [SugarColumn(ColumnName = "auto_test_enabled")]
+    public bool AutoTestEnabled { get; set; }
+
     [SugarColumn(ColumnName = "crawled_at", IsNullable = true)]
     public DateTime? CrawledAt { get; set; }
 

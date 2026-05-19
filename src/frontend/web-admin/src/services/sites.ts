@@ -41,6 +41,7 @@ export type RelaySiteOffer = {
   bonusRatio?: number;
   sourceType?: string;
   status?: string;
+  autoTestEnabled?: boolean;
   crawledAt?: string;
   reviewedAt?: string;
 };
@@ -113,6 +114,8 @@ export async function createSite(payload: {
   autoTestEnabled?: boolean;
   testApiKey?: string;
   testIntervalMinutes?: number;
+  rechargeRatio?: number;
+  bonusRatio?: number;
   offers?: RelaySiteOffer[];
 }) {
   return apiRequest<{ id: number }>("/api/v1/admin/sites", {
@@ -140,6 +143,8 @@ export async function updateSite(id: number, payload: {
   autoTestEnabled?: boolean;
   testApiKey?: string;
   testIntervalMinutes?: number;
+  rechargeRatio?: number;
+  bonusRatio?: number;
   offers?: RelaySiteOffer[];
 }) {
   return apiRequest<void>(`/api/v1/admin/sites/${id}`, {

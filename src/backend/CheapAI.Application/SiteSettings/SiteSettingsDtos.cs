@@ -5,6 +5,8 @@ public sealed class SiteSettingsResponse
     public string SiteName { get; init; } = "CheapAI";
 
     public string? SiteIconUrl { get; init; }
+
+    public string? FaviconUrl { get; init; }
 }
 
 public sealed class UpdateSiteSettingsRequest
@@ -12,6 +14,8 @@ public sealed class UpdateSiteSettingsRequest
     public string SiteName { get; init; } = "CheapAI";
 
     public string? SiteIconUrl { get; init; }
+
+    public string? FaviconUrl { get; init; }
 }
 
 public interface ISiteSettingsRepository

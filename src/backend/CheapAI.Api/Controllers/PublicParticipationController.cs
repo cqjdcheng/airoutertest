@@ -44,9 +44,16 @@ public sealed class PublicParticipationController(PublicParticipationService pub
     }
 
     [HttpGet("articles")]
-    public async Task<IActionResult> GetArticles([FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> GetArticles([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? tag = null, CancellationToken cancellationToken = default)
     {
-        var result = await publicParticipationService.GetArticlesAsync(page, pageSize, cancellationToken);
+        var result = await publicParticipationService.GetArticlesAsync(page, pageSize, tag, cancellationToken);
+        return Ok(ApiResponseFactory.Success(HttpContext, result));
+    }
+
+    [HttpGet("article-tags")]
+    public async Task<IActionResult> GetArticleTags(CancellationToken cancellationToken)
+    {
+        var result = await publicParticipationService.GetArticleTagsAsync(cancellationToken);
         return Ok(ApiResponseFactory.Success(HttpContext, result));
     }
 

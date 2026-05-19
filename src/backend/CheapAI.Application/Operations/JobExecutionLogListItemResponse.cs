@@ -18,3 +18,18 @@ public sealed class JobExecutionLogListItemResponse
 
     public DateTime CreatedAt { get; init; }
 }
+
+public sealed class ScheduledJobResponse
+{
+    public string Key { get; init; } = string.Empty;
+
+    public string Name { get; init; } = string.Empty;
+
+    public string Rule { get; init; } = string.Empty;
+
+    public string Status { get; init; } = "enabled";
+
+    public DateTime? LastRunAt { get; init; }
+
+    public DateTime? NextRunAt { get; init; }
+}

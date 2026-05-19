@@ -24,6 +24,12 @@ public sealed class OperationsAdminService(IOperationsRepository operationsRepos
         return operationsRepository.GetTestRecordsAsync(query, cancellationToken);
     }
 
+    public async Task<TestRecordDetailResponse> GetTestRecordAsync(ulong id, CancellationToken cancellationToken = default)
+    {
+        return await operationsRepository.GetTestRecordAsync(id, cancellationToken)
+            ?? throw new AppNotFoundException("Test record does not exist.");
+    }
+
     public Task<PagedResult<RiskEvidenceListItemResponse>> GetRisksAsync(OperationListQuery query, CancellationToken cancellationToken = default)
     {
         return operationsRepository.GetRisksAsync(query, cancellationToken);
@@ -48,6 +54,11 @@ public sealed class OperationsAdminService(IOperationsRepository operationsRepos
     public Task<PagedResult<JobExecutionLogListItemResponse>> GetJobLogsAsync(OperationListQuery query, CancellationToken cancellationToken = default)
     {
         return operationsRepository.GetJobLogsAsync(query, cancellationToken);
+    }
+
+    public Task<IReadOnlyList<ScheduledJobResponse>> GetScheduledJobsAsync(CancellationToken cancellationToken = default)
+    {
+        return operationsRepository.GetScheduledJobsAsync(cancellationToken);
     }
 
     public Task VerifyOfferAsync(ulong id, CancellationToken cancellationToken = default)

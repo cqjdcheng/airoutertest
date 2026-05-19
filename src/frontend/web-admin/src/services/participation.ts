@@ -19,6 +19,18 @@ export type ArticleListItem = {
   summary?: string;
   status: string;
   publishedAt?: string;
+  tags: ArticleTag[];
+};
+
+export type ArticleTag = {
+  id: number;
+  slug: string;
+  name: string;
+  sortOrder: number;
+};
+
+export type ArticleDetail = ArticleListItem & {
+  contentMd: string;
 };
 
 export function fetchSubmissions(page = 1, pageSize = 20) {
@@ -43,15 +55,34 @@ export function fetchArticles(page = 1, pageSize = 20) {
   return apiRequest<PagedResult<ArticleListItem>>(`/api/v1/admin/articles?page=${page}&pageSize=${pageSize}`);
 }
 
+export function fetchArticle(id: number) {
+  return apiRequest<ArticleDetail>(`/api/v1/admin/articles/${id}`);
+}
+
 export function createArticle(payload: {
   slug: string;
   title: string;
   summary?: string;
   contentMd: string;
   status?: string;
+  tagIds?: number[];
 }) {
   return apiRequest<{ id: number }>("/api/v1/admin/articles", {
     method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateArticle(id: number, payload: {
+  slug: string;
+  title: string;
+  summary?: string;
+  contentMd: string;
+  status?: string;
+  tagIds?: number[];
+}) {
+  return apiRequest<void>(`/api/v1/admin/articles/${id}`, {
+    method: "PUT",
     body: JSON.stringify(payload)
   });
 }
@@ -66,4 +97,26 @@ export function archiveArticle(id: number) {
 
 export function deleteArticle(id: number) {
   return apiRequest<void>(`/api/v1/admin/articles/${id}`, { method: "DELETE" });
+}
+
+export function fetchArticleTags() {
+  return apiRequest<ArticleTag[]>("/api/v1/admin/article-tags");
+}
+
+export function createArticleTag(payload: { slug?: string; name: string; sortOrder?: number }) {
+  return apiRequest<{ id: number }>("/api/v1/admin/article-tags", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateArticleTag(id: number, payload: { slug?: string; name: string; sortOrder?: number }) {
+  return apiRequest<void>(`/api/v1/admin/article-tags/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function deleteArticleTag(id: number) {
+  return apiRequest<void>(`/api/v1/admin/article-tags/${id}`, { method: "DELETE" });
 }

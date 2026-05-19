@@ -31,6 +31,8 @@ public sealed class RelaySiteOfferUpsertRequest
     public string SourceType { get; init; } = "manual";
 
     public string Status { get; init; } = "active";
+
+    public bool AutoTestEnabled { get; init; }
 }
 
 public sealed class RelaySiteOfferResponse
@@ -70,6 +72,8 @@ public sealed class RelaySiteOfferResponse
     public string SourceType { get; init; } = "manual";
 
     public string Status { get; init; } = "active";
+
+    public bool AutoTestEnabled { get; init; }
 
     public DateTime? CrawledAt { get; init; }
 

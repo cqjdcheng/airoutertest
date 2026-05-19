@@ -24,6 +24,13 @@ public sealed class AdminOperationsController(OperationsAdminService operationsA
         return Ok(ApiResponseFactory.Success(HttpContext, result));
     }
 
+    [HttpGet("test-records/{testRecordId}")]
+    public async Task<IActionResult> GetTestRecord(ulong testRecordId, CancellationToken cancellationToken)
+    {
+        var result = await operationsAdminService.GetTestRecordAsync(testRecordId, cancellationToken);
+        return Ok(ApiResponseFactory.Success(HttpContext, result));
+    }
+
     [HttpGet("risks")]
     public async Task<IActionResult> GetRisks([FromQuery] OperationListQuery query, CancellationToken cancellationToken)
     {
@@ -49,6 +56,13 @@ public sealed class AdminOperationsController(OperationsAdminService operationsA
     public async Task<IActionResult> GetJobLogs([FromQuery] OperationListQuery query, CancellationToken cancellationToken)
     {
         var result = await operationsAdminService.GetJobLogsAsync(query, cancellationToken);
+        return Ok(ApiResponseFactory.Success(HttpContext, result));
+    }
+
+    [HttpGet("scheduled-jobs")]
+    public async Task<IActionResult> GetScheduledJobs(CancellationToken cancellationToken)
+    {
+        var result = await operationsAdminService.GetScheduledJobsAsync(cancellationToken);
         return Ok(ApiResponseFactory.Success(HttpContext, result));
     }
 

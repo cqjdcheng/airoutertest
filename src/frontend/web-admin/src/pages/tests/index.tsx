@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { PageContainer, ProCard } from "@ant-design/pro-components";
-import { Alert, Button, Input, message, Table, Tag } from "antd";
+import { Alert, Button, Descriptions, Drawer, Input, Space, Table, Tag, message } from "antd";
 import AuthGuard from "@/components/AuthGuard";
 import AdminHero, { AdminMetrics } from "@/components/AdminHero";
-import { fetchTestRecords, runManualTest, type TestRecordListItem } from "@/services/operations";
+import { fetchTestRecord, fetchTestRecords, runManualTest, type TestRecordDetail, type TestRecordListItem } from "@/services/operations";
+import { formatBeijingTime } from "@/utils/time";
 
 export default function TestsPage() {
   const [items, setItems] = useState<TestRecordListItem[]>([]);
+  const [detail, setDetail] = useState<TestRecordDetail | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [keyword, setKeyword] = useState("");
 
   const filteredItems = useMemo(() => {
@@ -21,13 +24,22 @@ export default function TestsPage() {
   async function load() {
     setLoading(true);
     try {
-      const result = await fetchTestRecords(1, 50);
+      const result = await fetchTestRecords(1, 100);
       setItems(result.items);
       setError("");
     } catch (requestError) {
       setError((requestError as Error).message);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function openDetail(id: number) {
+    setDetailLoading(true);
+    try {
+      setDetail(await fetchTestRecord(id));
+    } finally {
+      setDetailLoading(false);
     }
   }
 
@@ -38,7 +50,7 @@ export default function TestsPage() {
   }
 
   useEffect(() => {
-    load();
+    void load();
   }, []);
 
   return (
@@ -47,15 +59,11 @@ export default function TestsPage() {
         <AdminHero
           eyebrow="Model Testing"
           title="测试管理"
-          subtitle="集中查看平台定时测试和手动补测结果。首 token、完整响应和错误类型会进入稳定性与风险计算。"
+          subtitle="集中查看平台定时测试和手动补测结果，支持查看每次检测项详情。"
           actions={
             <>
-              <Button type="primary" size="large" onClick={runTest}>
-                手动测试
-              </Button>
-              <Button size="large" onClick={load}>
-                刷新
-              </Button>
+              <Button type="primary" size="large" onClick={runTest}>手动测试</Button>
+              <Button size="large" onClick={load}>刷新</Button>
             </>
           }
         />
@@ -91,10 +99,49 @@ export default function TestsPage() {
               { title: "状态", dataIndex: "status", render: (status) => <Tag color={status === "success" ? "success" : "error"}>{status}</Tag> },
               { title: "首 token", dataIndex: "firstTokenMs", render: (value) => (value ? `${value}ms` : "-") },
               { title: "完整响应", dataIndex: "fullResponseMs", render: (value) => (value ? `${value}ms` : "-") },
-              { title: "测试时间", dataIndex: "testedAt" }
+              { title: "测试时间", dataIndex: "testedAt", render: (value) => formatBeijingTime(value) },
+              { title: "操作", render: (_, record) => <Button type="link" onClick={() => openDetail(record.id)}>查看详情</Button> }
             ]}
           />
         </ProCard>
+
+        <Drawer
+          open={Boolean(detail)}
+          title={detail ? `${detail.siteName} / ${detail.modelName}` : "测试详情"}
+          width={760}
+          loading={detailLoading}
+          onClose={() => setDetail(null)}
+        >
+          {detail ? (
+            <Space direction="vertical" size={16} style={{ width: "100%" }}>
+              <Descriptions bordered column={2} size="small">
+                <Descriptions.Item label="状态"><Tag color={detail.status === "success" ? "success" : "error"}>{detail.status}</Tag></Descriptions.Item>
+                <Descriptions.Item label="类型">{detail.testType}</Descriptions.Item>
+                <Descriptions.Item label="风险">{detail.riskLevel} / {detail.riskScore}</Descriptions.Item>
+                <Descriptions.Item label="匹配度">{detail.matchScore}</Descriptions.Item>
+                <Descriptions.Item label="首 token">{detail.firstTokenMs ? `${detail.firstTokenMs}ms` : "-"}</Descriptions.Item>
+                <Descriptions.Item label="完整响应">{detail.fullResponseMs ? `${detail.fullResponseMs}ms` : "-"}</Descriptions.Item>
+                <Descriptions.Item label="Token" span={2}>
+                  输入 {detail.inputTokens ?? "-"} / 输出 {detail.outputTokens ?? "-"} / 总计 {detail.totalTokens ?? "-"}
+                </Descriptions.Item>
+                <Descriptions.Item label="摘要" span={2}>{detail.resultSummary || detail.errorMessage || "-"}</Descriptions.Item>
+              </Descriptions>
+              <Table
+                rowKey={(row) => `${row.code}-${row.name}`}
+                dataSource={detail.checks}
+                pagination={false}
+                size="small"
+                columns={[
+                  { title: "编号", dataIndex: "code", width: 80 },
+                  { title: "检测项", dataIndex: "name", width: 130 },
+                  { title: "分类", dataIndex: "category", width: 100 },
+                  { title: "结果", render: (_, row) => `${row.status} / ${row.confidence}` },
+                  { title: "证据", dataIndex: "evidence" }
+                ]}
+              />
+            </Space>
+          ) : null}
+        </Drawer>
       </PageContainer>
     </AuthGuard>
   );

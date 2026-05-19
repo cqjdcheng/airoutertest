@@ -11,6 +11,7 @@ import {
   type RiskEvidenceDetail,
   type RiskEvidenceListItem
 } from "@/services/operations";
+import { formatBeijingTime } from "@/utils/time";
 
 const levelColors: Record<string, string> = {
   low: "success",
@@ -147,7 +148,7 @@ export default function RisksPage() {
                 dataIndex: "reviewStatus",
                 render: (status: string) => <Tag color={reviewColors[status] ?? "default"}>{status}</Tag>
               },
-              { title: "创建时间", dataIndex: "createdAt" },
+              { title: "创建时间", dataIndex: "createdAt", render: (value?: string) => formatBeijingTime(value) },
               {
                 title: "操作",
                 render: (_: unknown, record: RiskEvidenceListItem) => (

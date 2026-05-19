@@ -22,7 +22,7 @@ public sealed class AdminParticipationService(IParticipationRepository participa
 
     public Task<PagedResult<ArticleListItemResponse>> GetArticlesAsync(int page, int pageSize, CancellationToken cancellationToken = default)
     {
-        return participationRepository.GetArticlesAsync(page, pageSize, false, cancellationToken);
+        return participationRepository.GetArticlesAsync(page, pageSize, false, null, cancellationToken);
     }
 
     public async Task<ArticleDetailResponse> GetArticleByIdAsync(ulong id, CancellationToken cancellationToken = default)
@@ -54,5 +54,25 @@ public sealed class AdminParticipationService(IParticipationRepository participa
     public Task DeleteArticleAsync(ulong id, CancellationToken cancellationToken = default)
     {
         return participationRepository.DeleteArticleAsync(id, cancellationToken);
+    }
+
+    public Task<IReadOnlyList<ArticleTagResponse>> GetArticleTagsAsync(CancellationToken cancellationToken = default)
+    {
+        return participationRepository.GetArticleTagsAsync(cancellationToken);
+    }
+
+    public Task<ulong> CreateArticleTagAsync(UpsertArticleTagRequest request, CancellationToken cancellationToken = default)
+    {
+        return participationRepository.CreateArticleTagAsync(request, cancellationToken);
+    }
+
+    public Task UpdateArticleTagAsync(ulong id, UpsertArticleTagRequest request, CancellationToken cancellationToken = default)
+    {
+        return participationRepository.UpdateArticleTagAsync(id, request, cancellationToken);
+    }
+
+    public Task DeleteArticleTagAsync(ulong id, CancellationToken cancellationToken = default)
+    {
+        return participationRepository.DeleteArticleTagAsync(id, cancellationToken);
     }
 }

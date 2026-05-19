@@ -372,6 +372,19 @@ textarea {
   color: var(--brand);
 }
 
+.pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
 .secondary-button[aria-disabled="true"] {
   opacity: 0.45;
   pointer-events: none;
@@ -891,6 +904,9 @@ textarea {
 }
 
 .probe-card {
+  display: grid;
+  grid-template-rows: auto auto minmax(4.4rem, 1fr) auto;
+  min-height: 178px;
   border: 1px solid var(--line);
   border-radius: 16px;
   background: white;
@@ -942,6 +958,7 @@ textarea {
   color: var(--text-secondary);
   font-size: 0.84rem;
   line-height: 1.65;
+  overflow-wrap: anywhere;
 }
 
 .relay-metrics {
@@ -1585,6 +1602,29 @@ textarea {
   width: min(920px, 100%);
   max-height: min(86vh, 820px);
   overflow-y: auto;
+  padding-top: 1.4rem;
+  scrollbar-gutter: stable;
+}
+
+.test-detail-modal .scan-card__header {
+  position: sticky;
+  top: -1.4rem;
+  z-index: 3;
+  margin: -1.4rem -1.2rem 0;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.96);
+  padding: 1.2rem;
+  backdrop-filter: blur(10px);
+}
+
+.test-detail-modal .challenge-modal__close {
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  border-radius: 999px;
+  background: white;
+  box-shadow: inset 0 0 0 1px var(--line);
+  padding: 0.45rem 0.75rem;
 }
 
 .test-detail-summary {

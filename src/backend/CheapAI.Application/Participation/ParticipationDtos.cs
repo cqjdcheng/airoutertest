@@ -184,6 +184,8 @@ public class ArticleListItemResponse
     public string Status { get; init; } = string.Empty;
 
     public DateTime? PublishedAt { get; init; }
+
+    public IReadOnlyList<ArticleTagResponse> Tags { get; init; } = [];
 }
 
 public sealed class ArticleDetailResponse : ArticleListItemResponse
@@ -202,9 +204,31 @@ public class CreateArticleRequest
     public string ContentMd { get; init; } = string.Empty;
 
     public string Status { get; init; } = "draft";
+
+    public IReadOnlyList<ulong> TagIds { get; init; } = [];
 }
 
 public sealed class UpdateArticleRequest : CreateArticleRequest;
+
+public sealed class ArticleTagResponse
+{
+    public ulong Id { get; init; }
+
+    public string Slug { get; init; } = string.Empty;
+
+    public string Name { get; init; } = string.Empty;
+
+    public int SortOrder { get; init; }
+}
+
+public sealed class UpsertArticleTagRequest
+{
+    public string Slug { get; init; } = string.Empty;
+
+    public string Name { get; init; } = string.Empty;
+
+    public int SortOrder { get; init; } = 1000;
+}
 
 public interface IParticipationRepository
 {
@@ -220,7 +244,7 @@ public interface IParticipationRepository
 
     Task<IReadOnlyList<CapabilityRankingItemResponse>> GetCapabilityRankingAsync(CancellationToken cancellationToken = default);
 
-    Task<PagedResult<ArticleListItemResponse>> GetArticlesAsync(int page, int pageSize, bool publicOnly, CancellationToken cancellationToken = default);
+    Task<PagedResult<ArticleListItemResponse>> GetArticlesAsync(int page, int pageSize, bool publicOnly, string? tagSlug = null, CancellationToken cancellationToken = default);
 
     Task<ArticleDetailResponse?> GetArticleBySlugAsync(string slug, bool publicOnly, CancellationToken cancellationToken = default);
 
@@ -233,6 +257,14 @@ public interface IParticipationRepository
     Task UpdateArticleStatusAsync(ulong id, string status, CancellationToken cancellationToken = default);
 
     Task DeleteArticleAsync(ulong id, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<ArticleTagResponse>> GetArticleTagsAsync(CancellationToken cancellationToken = default);
+
+    Task<ulong> CreateArticleTagAsync(UpsertArticleTagRequest request, CancellationToken cancellationToken = default);
+
+    Task UpdateArticleTagAsync(ulong id, UpsertArticleTagRequest request, CancellationToken cancellationToken = default);
+
+    Task DeleteArticleTagAsync(ulong id, CancellationToken cancellationToken = default);
 }
 
 public interface ISelfTestRunner

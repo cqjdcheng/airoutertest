@@ -41,7 +41,9 @@ export function clearAccessToken() {
 
 async function rawRequest<T>(path: string, init?: RequestInit, retryOnUnauthorized = true): Promise<T> {
   const headers = new Headers(init?.headers ?? {});
-  headers.set("Content-Type", "application/json");
+  if (!(init?.body instanceof FormData)) {
+    headers.set("Content-Type", "application/json");
+  }
 
   const token = getAccessToken();
   if (token) {

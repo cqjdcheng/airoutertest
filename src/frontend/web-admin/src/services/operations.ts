@@ -30,6 +30,33 @@ export type TestRecordListItem = {
   testedAt: string;
 };
 
+export type TestProbeResult = {
+  code: string;
+  name: string;
+  category: string;
+  status: string;
+  confidence: string;
+  scoreImpact: number;
+  riskImpact: number;
+  evidence: string;
+};
+
+export type TestRecordDetail = TestRecordListItem & {
+  siteUrl?: string;
+  modelSlug?: string;
+  riskScore: number;
+  riskLevel: string;
+  resultSummary?: string;
+  matchScore: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  estimatedTokens: number;
+  tokensPerSecond?: number;
+  isStream: boolean;
+  checks: TestProbeResult[];
+};
+
 export type RiskEvidenceListItem = {
   id: number;
   siteName: string;
@@ -68,12 +95,25 @@ export type JobActionResponse = {
   message: string;
 };
 
+export type ScheduledJob = {
+  key: string;
+  name: string;
+  rule: string;
+  status: string;
+  lastRunAt?: string;
+  nextRunAt?: string;
+};
+
 export function fetchOffers(page = 1, pageSize = 20) {
   return apiRequest<PagedResult<RelayOfferListItem>>(`/api/v1/admin/offers?page=${page}&pageSize=${pageSize}`);
 }
 
 export function fetchTestRecords(page = 1, pageSize = 20) {
   return apiRequest<PagedResult<TestRecordListItem>>(`/api/v1/admin/test-records?page=${page}&pageSize=${pageSize}`);
+}
+
+export function fetchTestRecord(id: number) {
+  return apiRequest<TestRecordDetail>(`/api/v1/admin/test-records/${id}`);
 }
 
 export function fetchRisks(page = 1, pageSize = 20) {
@@ -93,6 +133,10 @@ export function reviewRisk(id: number, reviewStatus: "pending" | "confirmed" | "
 
 export function fetchJobLogs(page = 1, pageSize = 20) {
   return apiRequest<PagedResult<JobExecutionLogListItem>>(`/api/v1/admin/job-logs?page=${page}&pageSize=${pageSize}`);
+}
+
+export function fetchScheduledJobs() {
+  return apiRequest<ScheduledJob[]>("/api/v1/admin/scheduled-jobs");
 }
 
 export function verifyOffer(id: number) {

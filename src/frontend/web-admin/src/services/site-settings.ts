@@ -3,6 +3,7 @@ import { apiRequest } from "./api";
 export type SiteSettings = {
   siteName: string;
   siteIconUrl?: string;
+  faviconUrl?: string;
 };
 
 export async function fetchSiteSettings() {

@@ -8,6 +8,8 @@ public interface IOperationsRepository
 
     Task<PagedResult<TestRecordListItemResponse>> GetTestRecordsAsync(OperationListQuery query, CancellationToken cancellationToken = default);
 
+    Task<TestRecordDetailResponse?> GetTestRecordAsync(ulong id, CancellationToken cancellationToken = default);
+
     Task<PagedResult<RiskEvidenceListItemResponse>> GetRisksAsync(OperationListQuery query, CancellationToken cancellationToken = default);
 
     Task<RiskEvidenceDetailResponse?> GetRiskAsync(ulong id, CancellationToken cancellationToken = default);
@@ -15,6 +17,8 @@ public interface IOperationsRepository
     Task ReviewRiskAsync(ulong id, string reviewStatus, CancellationToken cancellationToken = default);
 
     Task<PagedResult<JobExecutionLogListItemResponse>> GetJobLogsAsync(OperationListQuery query, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<ScheduledJobResponse>> GetScheduledJobsAsync(CancellationToken cancellationToken = default);
 
     Task VerifyOfferAsync(ulong id, CancellationToken cancellationToken = default);
 

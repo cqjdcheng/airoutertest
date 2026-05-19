@@ -21,6 +21,7 @@ export function formatDateTime(value?: string | null) {
   }
 
   return date.toLocaleString("zh-CN", {
+    timeZone: "Asia/Shanghai",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

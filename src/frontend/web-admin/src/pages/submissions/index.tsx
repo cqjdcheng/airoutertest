@@ -9,6 +9,7 @@ import {
   rejectSubmission,
   type SiteSubmissionListItem
 } from "@/services/participation";
+import { formatBeijingTime } from "@/utils/time";
 
 const reviewColors: Record<string, string> = {
   pending: "processing",
@@ -141,7 +142,7 @@ export default function SubmissionsPage() {
                 dataIndex: "reviewStatus",
                 render: (status: string) => <Tag color={reviewColors[status] ?? "default"}>{status}</Tag>
               },
-              { title: "提交时间", dataIndex: "createdAt" },
+              { title: "提交时间", dataIndex: "createdAt", render: (value?: string) => formatBeijingTime(value) },
               {
                 title: "操作",
                 render: (_: unknown, record: SiteSubmissionListItem) => (

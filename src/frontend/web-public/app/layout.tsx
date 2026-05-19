@@ -12,7 +12,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: `${settings.siteName} - AI 中转站比价与风险识别`,
     description,
-    icons: settings.siteIconUrl ? [{ url: settings.siteIconUrl }] : undefined
+    icons: settings.faviconUrl || settings.siteIconUrl ? [{ url: settings.faviconUrl || settings.siteIconUrl || "" }] : undefined
   };
 }
 

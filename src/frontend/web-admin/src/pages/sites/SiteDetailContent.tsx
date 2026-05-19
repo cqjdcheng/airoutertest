@@ -1,5 +1,6 @@
 import { Descriptions, Empty, Space, Table, Tabs, Tag } from "antd";
 import type { RelaySiteDetail, RelaySiteOffer, RelaySiteTestRecord } from "@/services/sites";
+import { formatBeijingTime } from "@/utils/time";
 
 type SiteDetailContentProps = {
   detail: RelaySiteDetail;
@@ -44,7 +45,7 @@ export default function SiteDetailContent({ detail }: SiteDetailContentProps) {
                 </Space>
               </Descriptions.Item>
               <Descriptions.Item label="测试间隔">{detail.testIntervalMinutes} 分钟</Descriptions.Item>
-              <Descriptions.Item label="上次自动测试" span={2}>{detail.lastAutoTestAt ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="上次自动测试" span={2}>{formatBeijingTime(detail.lastAutoTestAt)}</Descriptions.Item>
               <Descriptions.Item label="能力" span={2}>
                 <Space>
                   {detail.supportsInvoice ? <Tag color="blue">支持发票</Tag> : <Tag>无发票标记</Tag>}
@@ -100,7 +101,7 @@ export default function SiteDetailContent({ detail }: SiteDetailContentProps) {
                 { title: "完整响应", dataIndex: "fullResponseMs", width: 110, render: (value?: number) => value ? `${value}ms` : "-" },
                 { title: "风险", dataIndex: "riskScore", width: 90 },
                 { title: "错误", dataIndex: "errorMessage", ellipsis: true, render: (value?: string) => value ?? "-" },
-                { title: "测试时间", dataIndex: "testedAt", width: 190 }
+                { title: "测试时间", dataIndex: "testedAt", width: 190, render: (value?: string) => formatBeijingTime(value) }
               ]}
             />
           ) : (

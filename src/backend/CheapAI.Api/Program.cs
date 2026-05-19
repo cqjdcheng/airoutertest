@@ -8,6 +8,7 @@ using CheapAI.Api.HostedServices;
 using Hangfire;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 
@@ -70,6 +71,8 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 var infrastructureRuntimeState = app.Services.GetRequiredService<InfrastructureRuntimeState>();
+var uploadRoot = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "uploads");
+Directory.CreateDirectory(uploadRoot);
 
 app.UseSerilogRequestLogging();
 app.UseExceptionHandler(errorApp =>
@@ -111,6 +114,11 @@ if (app.Environment.IsDevelopment())
 
 app.UseAuthentication();
 app.UseCors("DevelopmentCors");
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(uploadRoot),
+    RequestPath = "/api/v1/public/uploads"
+});
 app.UseAuthorization();
 
 app.MapControllers();

@@ -23,6 +23,21 @@ public sealed class CreateArticleRequestValidator : AbstractValidator<CreateArti
         validator.RuleFor(x => x.Status)
             .Must(x => x is "draft" or "published" or "archived")
             .WithMessage("Status must be draft, published, or archived.");
+        validator.RuleFor(x => x.TagIds).Must(x => x.Count <= 12).WithMessage("Article can bind at most 12 tags.");
+    }
+}
+
+public sealed class UpsertArticleTagRequestValidator : AbstractValidator<UpsertArticleTagRequest>
+{
+    public UpsertArticleTagRequestValidator()
+    {
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(128);
+        RuleFor(x => x.Slug)
+            .MaximumLength(128)
+            .Matches("^[a-z0-9]+(?:-[a-z0-9]+)*$")
+            .When(x => !string.IsNullOrWhiteSpace(x.Slug))
+            .WithMessage("Slug must use lowercase letters, numbers, and hyphens.");
+        RuleFor(x => x.SortOrder).GreaterThanOrEqualTo(0).LessThanOrEqualTo(999999);
     }
 }
 

@@ -151,6 +151,7 @@ CREATE TABLE IF NOT EXISTS relay_offers (
   effective_input_price_usd DECIMAL(18, 6) NULL,
   effective_output_price_usd DECIMAL(18, 6) NULL,
   status VARCHAR(24) NOT NULL DEFAULT 'active',
+  auto_test_enabled TINYINT(1) NOT NULL DEFAULT 0,
   crawled_at DATETIME(3) NULL,
   reviewed_at DATETIME(3) NULL,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -356,10 +357,31 @@ CREATE TABLE IF NOT EXISTS articles (
   KEY idx_articles_status_published_at (status, published_at)
 );
 --//@
+CREATE TABLE IF NOT EXISTS article_tags (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  slug VARCHAR(128) NOT NULL,
+  name VARCHAR(128) NOT NULL,
+  sort_order INT NOT NULL DEFAULT 1000,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  deleted_at DATETIME(3) NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_article_tags_slug (slug),
+  KEY idx_article_tags_deleted_sort (deleted_at, sort_order)
+);
+--//@
+CREATE TABLE IF NOT EXISTS article_tag_maps (
+  article_id BIGINT UNSIGNED NOT NULL,
+  tag_id BIGINT UNSIGNED NOT NULL,
+  PRIMARY KEY (article_id, tag_id),
+  KEY idx_article_tag_maps_tag (tag_id)
+);
+--//@
 CREATE TABLE IF NOT EXISTS site_settings (
   id TINYINT UNSIGNED NOT NULL,
   site_name VARCHAR(64) NOT NULL,
   site_icon_url VARCHAR(512) NULL,
+  favicon_url VARCHAR(512) NULL,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   updated_by BIGINT UNSIGNED NULL,
