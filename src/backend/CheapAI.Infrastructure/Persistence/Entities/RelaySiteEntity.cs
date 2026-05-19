@@ -44,6 +44,18 @@ public sealed class RelaySiteEntity
     [SugarColumn(ColumnName = "recent_review", IsNullable = true)]
     public string? RecentReview { get; set; }
 
+    [SugarColumn(ColumnName = "auto_test_enabled")]
+    public bool AutoTestEnabled { get; set; }
+
+    [SugarColumn(ColumnName = "test_api_key", IsNullable = true)]
+    public string? TestApiKey { get; set; }
+
+    [SugarColumn(ColumnName = "test_interval_minutes")]
+    public int TestIntervalMinutes { get; set; } = 60;
+
+    [SugarColumn(ColumnName = "last_auto_test_at", IsNullable = true)]
+    public DateTime? LastAutoTestAt { get; set; }
+
     [SugarColumn(ColumnName = "created_at")]
     public DateTime CreatedAt { get; set; }
 

@@ -13,6 +13,8 @@ public sealed class UpdateRelaySiteRequestValidator : AbstractValidator<UpdateRe
         RuleFor(x => x.DocsUrl).MaximumLength(255);
         RuleFor(x => x.InviteUrl).MaximumLength(255);
         RuleFor(x => x.RecentReview).MaximumLength(1000);
+        RuleFor(x => x.TestApiKey).MaximumLength(2048);
+        RuleFor(x => x.TestIntervalMinutes).InclusiveBetween(15, 10080);
         RuleForEach(x => x.Offers).SetValidator(new RelaySiteOfferUpsertRequestValidator());
     }
 }

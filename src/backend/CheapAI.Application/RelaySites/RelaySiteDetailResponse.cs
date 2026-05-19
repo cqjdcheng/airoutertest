@@ -28,6 +28,14 @@ public sealed class RelaySiteDetailResponse
 
     public string? RecentReview { get; init; }
 
+    public bool AutoTestEnabled { get; init; }
+
+    public bool HasTestApiKey { get; init; }
+
+    public int TestIntervalMinutes { get; init; } = 60;
+
+    public DateTime? LastAutoTestAt { get; init; }
+
     public DateTime CreatedAtUtc { get; init; }
 
     public DateTime UpdatedAtUtc { get; init; }

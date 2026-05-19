@@ -72,6 +72,10 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
                 SupportsRefund = x.SupportsRefund,
                 SupportsInvoice = x.SupportsInvoice,
                 HasDocs = x.HasDocs,
+                AutoTestEnabled = x.AutoTestEnabled,
+                HasTestApiKey = x.TestApiKey != null && x.TestApiKey != "",
+                TestIntervalMinutes = x.TestIntervalMinutes,
+                LastAutoTestAt = x.LastAutoTestAt,
                 CreatedAtUtc = x.CreatedAt
             })
             .ToPageListAsync(query.Page, query.PageSize, total, cancellationToken);
@@ -100,6 +104,9 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
             DocsUrl = request.DocsUrl,
             InviteUrl = request.InviteUrl,
             RecentReview = request.RecentReview,
+            AutoTestEnabled = request.AutoTestEnabled,
+            TestApiKey = NormalizeOptionalSecret(request.TestApiKey),
+            TestIntervalMinutes = NormalizeTestInterval(request.TestIntervalMinutes),
             Status = RelaySiteStatusValue.Draft,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
@@ -127,6 +134,12 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
         try
         {
             db.Ado.BeginTran();
+            var existing = await db.Queryable<RelaySiteEntity>()
+                .FirstAsync(x => x.Id == id && x.DeletedAt == null, cancellationToken);
+            var nextTestApiKey = request.TestApiKey is null
+                ? existing?.TestApiKey
+                : NormalizeOptionalSecret(request.TestApiKey);
+
             await db.Updateable<RelaySiteEntity>()
                 .SetColumns(x => new RelaySiteEntity
                 {
@@ -141,6 +154,9 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
                     DocsUrl = request.DocsUrl,
                     InviteUrl = request.InviteUrl,
                     RecentReview = request.RecentReview,
+                    AutoTestEnabled = request.AutoTestEnabled,
+                    TestApiKey = nextTestApiKey,
+                    TestIntervalMinutes = NormalizeTestInterval(request.TestIntervalMinutes),
                     UpdatedAt = DateTime.UtcNow,
                     UpdatedBy = adminUserId
                 })
@@ -442,10 +458,24 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
             Status = entity.Status,
             InviteUrl = entity.InviteUrl,
             RecentReview = entity.RecentReview,
+            AutoTestEnabled = entity.AutoTestEnabled,
+            HasTestApiKey = !string.IsNullOrWhiteSpace(entity.TestApiKey),
+            TestIntervalMinutes = entity.TestIntervalMinutes,
+            LastAutoTestAt = entity.LastAutoTestAt,
             CreatedAtUtc = entity.CreatedAt,
             UpdatedAtUtc = entity.UpdatedAt,
             Offers = offers,
             RecentTests = recentTests
         };
+    }
+
+    private static string? NormalizeOptionalSecret(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static int NormalizeTestInterval(int value)
+    {
+        return value < 15 ? 60 : value;
     }
 }

@@ -65,23 +65,6 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
             .ToListAsync(cancellationToken);
 
         var items = rows.Select(MapListItem).ToList();
-        var linkedSelfTestIds = await db.Queryable<TestRecordEntity>()
-            .Where(x => x.SelfTestId != null)
-            .Select(x => x.SelfTestId)
-            .ToListAsync(cancellationToken);
-
-        var linkedSelfTestIdSet = linkedSelfTestIds
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var selfTests = await db.Queryable<SelfTestEntity>()
-            .Where(x => x.ExpiresAt > DateTime.UtcNow)
-            .OrderBy(x => x.CreatedAt, OrderByType.Desc)
-            .ToListAsync(cancellationToken);
-
-        items.AddRange(selfTests
-            .Where(x => !linkedSelfTestIdSet.Contains(x.Id))
-            .Where(x => string.IsNullOrWhiteSpace(testType) || IsSelfTestType(testType))
-            .Select(MapSelfTestListItem));
 
         var riskMap = await LoadRiskMapAsync(items.Select(x => (x.SiteSlug, x.ModelSlug)).Distinct().ToList(), cancellationToken);
         items = items.Select(row =>
@@ -613,13 +596,6 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
     private static string HostFromUrl(string siteUrl)
     {
         return Uri.TryCreate(siteUrl, UriKind.Absolute, out var uri) ? uri.Host : siteUrl;
-    }
-
-    private static bool IsSelfTestType(string? testType)
-    {
-        return string.IsNullOrWhiteSpace(testType) ||
-               testType.Equals("user", StringComparison.OrdinalIgnoreCase) ||
-               testType.Equals("self", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string NormalizeStatus(string status)

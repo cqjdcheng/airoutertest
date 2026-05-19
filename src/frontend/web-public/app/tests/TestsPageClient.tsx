@@ -169,10 +169,11 @@ export function TestsPageClient({
   function handleSelfTestCompleted() {
     setHistoryItems(readSelfTestHistory());
     refreshAllRecords();
-    setActiveTab("mine");
+    setActiveTab("all");
   }
 
-  const visibleRecords = activeTab === "mine" ? myRecords : allRecords;
+  const mergedAllRecords = mergeTestRecords(allRecords, myRecords);
+  const visibleRecords = activeTab === "mine" ? myRecords : mergedAllRecords;
   const visibleLoading = activeTab === "mine" ? myRecordsLoading : allRecordsLoading;
   const resolvedMaxPages = Math.max(1, Math.ceil(Math.min(allRecordsTotal, 200) / 20));
 
@@ -223,7 +224,7 @@ export function TestsPageClient({
         </div>
 
         <TestRecordTable
-          emptyText={activeTab === "mine" ? "本机还没有自测记录。" : "暂无平台测试记录。"}
+          emptyText={activeTab === "mine" ? "本机还没有自测记录。" : "暂无测试记录。"}
           items={visibleRecords}
           loading={visibleLoading}
           onDetail={openDetail}
@@ -248,12 +249,9 @@ export function TestsPageClient({
 }
 
 async function loadHistoryRecord(item: SelfTestHistoryItem): Promise<TestRecord> {
-  const detailId = item.testRecordId ? String(item.testRecordId) : item.id;
-  if (detailId) {
-    const response = await getJson<PublicEnvelope<TestRecordDetail>>(`/api/v1/public/tests/${encodeURIComponent(detailId)}`);
-    if (response?.data) {
-      return detailToRecord(response.data, item.id);
-    }
+  if (item.testRecordId) {
+    const response = await getJson<PublicEnvelope<TestRecordDetail>>(`/api/v1/public/tests/${item.testRecordId}`);
+    return response?.data ? detailToRecord(response.data, item.id) : historyToRecord(item);
   }
 
   return historyToRecord(item);
@@ -466,10 +464,25 @@ function detailToRecord(detail: TestRecordDetail, sourceKey?: string): TestRecor
   };
 }
 
+function mergeTestRecords(primary: TestRecord[], fallback: TestRecord[]) {
+  const seen = new Set<string>();
+  return [...primary, ...fallback]
+    .filter((item) => {
+      const key = item.publicId || (item.id ? String(item.id) : item.sourceKey) || `${item.siteUrl}-${item.modelName}-${item.testedAt}`;
+      if (seen.has(key)) {
+        return false;
+      }
+
+      seen.add(key);
+      return true;
+    })
+    .sort((left, right) => Date.parse(right.testedAt) - Date.parse(left.testedAt));
+}
+
 function historyToRecord(item: SelfTestHistoryItem): TestRecord {
   return {
     id: item.testRecordId ?? 0,
-    publicId: item.testRecordId ? String(item.testRecordId) : item.id,
+    publicId: item.testRecordId ? String(item.testRecordId) : "",
     sourceKey: item.id,
     siteSlug: item.siteSlug ?? "",
     siteName: item.siteName || hostFromUrl(item.siteUrl) || item.siteUrl,

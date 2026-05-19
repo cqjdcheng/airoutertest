@@ -37,6 +37,14 @@ export default function SiteDetailContent({ detail }: SiteDetailContentProps) {
               <Descriptions.Item label="官网">{detail.websiteUrl ?? "-"}</Descriptions.Item>
               <Descriptions.Item label="文档">{detail.docsUrl ?? "-"}</Descriptions.Item>
               <Descriptions.Item label="邀请链接">{detail.inviteUrl ?? "-"}</Descriptions.Item>
+              <Descriptions.Item label="自动测试">
+                <Space>
+                  <Tag color={detail.autoTestEnabled ? "purple" : "default"}>{detail.autoTestEnabled ? "启用" : "停用"}</Tag>
+                  <Tag color={detail.hasTestApiKey ? "green" : "orange"}>{detail.hasTestApiKey ? "已配置 Key" : "未配置 Key"}</Tag>
+                </Space>
+              </Descriptions.Item>
+              <Descriptions.Item label="测试间隔">{detail.testIntervalMinutes} 分钟</Descriptions.Item>
+              <Descriptions.Item label="上次自动测试" span={2}>{detail.lastAutoTestAt ?? "-"}</Descriptions.Item>
               <Descriptions.Item label="能力" span={2}>
                 <Space>
                   {detail.supportsInvoice ? <Tag color="blue">支持发票</Tag> : <Tag>无发票标记</Tag>}

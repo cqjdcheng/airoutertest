@@ -11,6 +11,10 @@ export type RelaySiteListItem = {
   supportsRefund: boolean;
   supportsInvoice: boolean;
   hasDocs: boolean;
+  autoTestEnabled: boolean;
+  hasTestApiKey: boolean;
+  testIntervalMinutes: number;
+  lastAutoTestAt?: string;
   docsUrl?: string;
   inviteUrl?: string;
   recentReview?: string;
@@ -106,6 +110,9 @@ export async function createSite(payload: {
   docsUrl?: string;
   inviteUrl?: string;
   recentReview?: string;
+  autoTestEnabled?: boolean;
+  testApiKey?: string;
+  testIntervalMinutes?: number;
   offers?: RelaySiteOffer[];
 }) {
   return apiRequest<{ id: number }>("/api/v1/admin/sites", {
@@ -130,6 +137,9 @@ export async function updateSite(id: number, payload: {
   docsUrl?: string;
   inviteUrl?: string;
   recentReview?: string;
+  autoTestEnabled?: boolean;
+  testApiKey?: string;
+  testIntervalMinutes?: number;
   offers?: RelaySiteOffer[];
 }) {
   return apiRequest<void>(`/api/v1/admin/sites/${id}`, {

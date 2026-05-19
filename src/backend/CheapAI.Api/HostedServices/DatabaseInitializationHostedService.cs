@@ -88,6 +88,7 @@ public sealed class DatabaseInitializationHostedService(
         await EnsureSelfTestProbeColumnsAsync(cancellationToken);
         await EnsureUnifiedTestRecordColumnsAsync(cancellationToken);
         await EnsureModelDisplayColumnsAsync(cancellationToken);
+        await EnsureRelaySiteAutoTestColumnsAsync(cancellationToken);
     }
 
     private async Task EnsureModelProviderSchemaAsync(CancellationToken cancellationToken)
@@ -308,6 +309,37 @@ public sealed class DatabaseInitializationHostedService(
         }
 
         await EnsureIndexAsync(connection, "models", "idx_models_api_type", "ALTER TABLE models ADD INDEX idx_models_api_type (api_type);", cancellationToken);
+    }
+
+    private async Task EnsureRelaySiteAutoTestColumnsAsync(CancellationToken cancellationToken)
+    {
+        var columns = new (string Name, string Definition)[]
+        {
+            ("auto_test_enabled", "ALTER TABLE relay_sites ADD COLUMN auto_test_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER recent_review;"),
+            ("test_api_key", "ALTER TABLE relay_sites ADD COLUMN test_api_key TEXT NULL AFTER auto_test_enabled;"),
+            ("test_interval_minutes", "ALTER TABLE relay_sites ADD COLUMN test_interval_minutes INT NOT NULL DEFAULT 60 AFTER test_api_key;"),
+            ("last_auto_test_at", "ALTER TABLE relay_sites ADD COLUMN last_auto_test_at DATETIME(3) NULL AFTER test_interval_minutes;")
+        };
+
+        await using var connection = new MySqlConnection(mySqlOptions.Value.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        if (!await TableExistsAsync(connection, "relay_sites", cancellationToken))
+        {
+            return;
+        }
+
+        foreach (var column in columns)
+        {
+            if (await ColumnExistsAsync(connection, "relay_sites", column.Name, cancellationToken))
+            {
+                continue;
+            }
+
+            await using var alterCommand = connection.CreateCommand();
+            alterCommand.CommandText = column.Definition;
+            await alterCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
     }
 
     private static async Task<bool> TableExistsAsync(MySqlConnection connection, string tableName, CancellationToken cancellationToken)

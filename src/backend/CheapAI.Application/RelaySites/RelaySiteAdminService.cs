@@ -46,6 +46,9 @@ public sealed class RelaySiteAdminService(
             DocsUrl = request.DocsUrl,
             InviteUrl = request.InviteUrl,
             RecentReview = request.RecentReview,
+            AutoTestEnabled = request.AutoTestEnabled,
+            TestApiKey = request.TestApiKey,
+            TestIntervalMinutes = request.TestIntervalMinutes,
             Offers = request.Offers
         };
 
@@ -79,6 +82,9 @@ public sealed class RelaySiteAdminService(
             DocsUrl = request.DocsUrl,
             InviteUrl = request.InviteUrl,
             RecentReview = request.RecentReview,
+            AutoTestEnabled = request.AutoTestEnabled,
+            TestApiKey = request.TestApiKey,
+            TestIntervalMinutes = request.TestIntervalMinutes,
             Offers = request.Offers
         };
 

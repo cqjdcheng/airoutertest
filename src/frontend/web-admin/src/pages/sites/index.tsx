@@ -38,6 +38,9 @@ type SiteFormValues = {
   docsUrl?: string;
   inviteUrl?: string;
   recentReview?: string;
+  autoTestEnabled?: boolean;
+  testApiKey?: string;
+  testIntervalMinutes?: number;
   rechargeRatio?: number;
   bonusRatio?: number;
   offers?: RelaySiteOffer[];
@@ -51,6 +54,8 @@ const defaultSiteValues: SiteFormValues = {
   supportsRefund: false,
   supportsInvoice: false,
   hasDocs: false,
+  autoTestEnabled: false,
+  testIntervalMinutes: 60,
   rechargeRatio: 1,
   bonusRatio: 0,
   offers: []
@@ -306,6 +311,9 @@ export default function SitesPage() {
         docsUrl: values.docsUrl,
         inviteUrl: values.inviteUrl,
         recentReview: values.recentReview,
+        autoTestEnabled: Boolean(values.autoTestEnabled),
+        testApiKey: values.testApiKey,
+        testIntervalMinutes: toNumber(values.testIntervalMinutes) ?? 60,
         supportsRefund: Boolean(values.supportsRefund),
         supportsInvoice: Boolean(values.supportsInvoice),
         hasDocs: Boolean(values.hasDocs),
@@ -632,6 +640,7 @@ export default function SitesPage() {
                     {record.supportsInvoice ? <Tag color="blue">发票</Tag> : null}
                     {record.supportsRefund ? <Tag color="green">退款</Tag> : null}
                     {record.hasDocs ? <Tag>文档</Tag> : null}
+                    {record.autoTestEnabled ? <Tag color={record.hasTestApiKey ? "purple" : "orange"}>自动测试</Tag> : null}
                   </Space>
                 )
               },
@@ -705,6 +714,20 @@ export default function SitesPage() {
               <ProFormText name="docsUrl" label="文档地址" />
               <ProFormText name="inviteUrl" label="邀请链接" />
               <ProFormTextArea name="recentReview" label="近期体验" fieldProps={{ rows: 3 }} />
+              <Space wrap>
+                <ProFormSwitch name="autoTestEnabled" label="启用自动测试" />
+                <ProFormText
+                  name="testIntervalMinutes"
+                  label="测试间隔（分钟）"
+                  fieldProps={{ type: "number", min: 15, step: 15 }}
+                  rules={[{ required: true, message: "请输入测试间隔" }]}
+                />
+                <ProFormText.Password
+                  name="testApiKey"
+                  label={editing?.hasTestApiKey ? "测试 Key（已保存，留空不变）" : "测试 Key"}
+                  fieldProps={{ autoComplete: "new-password" }}
+                />
+              </Space>
               <Space wrap>
                 <ProFormText
                   name="rechargeRatio"

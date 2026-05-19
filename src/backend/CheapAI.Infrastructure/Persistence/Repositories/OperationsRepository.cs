@@ -1,14 +1,17 @@
 using CheapAI.Application.Common.Paging;
 using CheapAI.Application.Operations;
+using CheapAI.Application.Participation;
 using CheapAI.Application.Scoring;
 using CheapAI.Infrastructure.Persistence.Entities;
 using SqlSugar;
 using CheapAI.Application.Common.Exceptions;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 
 namespace CheapAI.Infrastructure.Persistence.Repositories;
 
-public sealed class OperationsRepository(ISqlSugarClient db) : IOperationsRepository
+public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner selfTestRunner) : IOperationsRepository
 {
     public async Task<PagedResult<RelayOfferListItemResponse>> GetOffersAsync(OperationListQuery query, CancellationToken cancellationToken = default)
     {
@@ -270,7 +273,14 @@ public sealed class OperationsRepository(ISqlSugarClient db) : IOperationsReposi
                 (offer, site, model) => new JoinQueryInfos(
                     JoinType.Inner, offer.SiteId == site.Id,
                     JoinType.Inner, offer.ModelId == model.Id))
-            .Where((offer, site, model) => offer.Status == "active" && site.DeletedAt == null && model.DeletedAt == null)
+            .Where((offer, site, model) =>
+                offer.Status == "active" &&
+                site.Status == "active" &&
+                site.DeletedAt == null &&
+                site.AutoTestEnabled &&
+                site.TestApiKey != null &&
+                site.TestApiKey != "" &&
+                model.DeletedAt == null)
             .Select((offer, site, model) => new PlatformTestOfferRow
             {
                 SiteId = offer.SiteId,
@@ -278,30 +288,31 @@ public sealed class OperationsRepository(ISqlSugarClient db) : IOperationsReposi
                 ChannelId = offer.ChannelId,
                 SiteUrl = site.BaseUrl,
                 SiteName = site.Name,
+                TestApiKey = site.TestApiKey!,
+                TestIntervalMinutes = site.TestIntervalMinutes,
+                LastAutoTestAt = site.LastAutoTestAt,
                 ModelSlug = model.Slug,
-                ModelName = model.DisplayName
+                ModelName = model.DisplayName,
+                RequestName = model.RequestName,
+                OfficialModelId = model.OfficialModelId
             })
             .ToListAsync(cancellationToken);
 
         var affected = 0;
-        foreach (var offer in offers)
+        foreach (var offer in offers
+                     .Where(x => x.LastAutoTestAt is null || x.LastAutoTestAt <= now.AddMinutes(-Math.Max(15, x.TestIntervalMinutes)))
+                     .Take(50))
         {
-            const string resultSummary = "平台统一测试样本通过。";
-            var checksJson = JsonSerializer.Serialize(new[]
+            var request = new CreateSelfTestRequest
             {
-                new
-                {
-                    code = "D1",
-                    name = "协议连通性",
-                    category = "协议",
-                    status = "pass",
-                    confidence = "medium",
-                    scoreImpact = 15,
-                    riskImpact = 0,
-                    evidence = "平台周期测试样本生成成功。"
-                }
-            });
-
+                SiteUrl = offer.SiteUrl,
+                ModelName = FirstNonEmpty(offer.RequestName, offer.OfficialModelId, offer.ModelName, offer.ModelSlug),
+                ApiKey = offer.TestApiKey,
+                IsStream = true,
+                TestMode = "comprehensive"
+            };
+            var result = await selfTestRunner.ExecuteAsync(request, cancellationToken);
+            var status = NormalizeRecordStatus(result.Status);
             await db.Insertable(new TestRecordEntity
             {
                 SiteId = offer.SiteId,
@@ -311,28 +322,43 @@ public sealed class OperationsRepository(ISqlSugarClient db) : IOperationsReposi
                 SiteName = offer.SiteName,
                 ModelSlug = offer.ModelSlug,
                 ModelName = offer.ModelName,
-                TestType = "platform",
+                TestType = "auto",
                 IsStream = true,
-                Status = "success",
-                FirstTokenMs = 820,
-                FullResponseMs = 2460,
-                PromptHash = "local-p0-seed",
-                ResponseHash = $"ok-{offer.SiteId}-{offer.ModelId}",
+                Status = status,
+                FirstTokenMs = result.FirstTokenMs,
+                FullResponseMs = result.FullResponseMs,
+                ErrorCode = status == "success" ? null : "auto_test_failed",
+                ErrorMessage = status == "success" ? null : result.ResultSummary,
+                PromptHash = HashText($"auto:{request.ModelName}:{request.IsStream}"),
+                ResponseHash = HashText(JsonSerializer.Serialize(result.Checks)),
                 DetectedModelId = null,
-                RiskScore = 14,
-                RiskLevel = "low",
-                ResultSummary = resultSummary,
-                MatchScore = 92,
-                EstimatedTokens = 1000,
-                ChecksJson = checksJson,
+                RiskScore = result.RiskScore,
+                RiskLevel = result.RiskLevel,
+                ResultSummary = result.ResultSummary,
+                MatchScore = result.MatchScore,
+                InputTokens = result.InputTokens,
+                OutputTokens = result.OutputTokens,
+                TotalTokens = result.TotalTokens,
+                EstimatedTokens = result.EstimatedTokens,
+                TokensPerSecond = result.TokensPerSecond,
+                ChecksJson = JsonSerializer.Serialize(result.Checks),
                 TestedAt = now,
                 CreatedAt = now
             }).ExecuteCommandAsync(cancellationToken);
+
+            await db.Updateable<RelaySiteEntity>()
+                .SetColumns(x => new RelaySiteEntity
+                {
+                    LastAutoTestAt = now,
+                    UpdatedAt = now
+                })
+                .Where(x => x.Id == offer.SiteId)
+                .ExecuteCommandAsync(cancellationToken);
             affected++;
         }
 
         await MarkTestJobSucceededAsync(jobId, affected, now, cancellationToken);
-        return await LogActionAsync("test", jobId, affected, "平台模型测试样本已生成", now, cancellationToken);
+        return await LogActionAsync("test", jobId, affected, "自动中转测试已完成", now, cancellationToken);
     }
 
     public async Task<JobActionResponse> RecalculateRisksAsync(ulong? adminUserId, CancellationToken cancellationToken = default)
@@ -600,6 +626,21 @@ public sealed class OperationsRepository(ISqlSugarClient db) : IOperationsReposi
         return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
     }
 
+    private static string NormalizeRecordStatus(string status)
+    {
+        return status.Equals("succeeded", StringComparison.OrdinalIgnoreCase) ||
+               status.Equals("success", StringComparison.OrdinalIgnoreCase) ||
+               status.Equals("pass", StringComparison.OrdinalIgnoreCase)
+            ? "success"
+            : "failed";
+    }
+
+    private static string HashText(string value)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
+    }
+
     private sealed class AdminTestRecordQueryRow
     {
         public ulong Id { get; init; }
@@ -664,8 +705,18 @@ public sealed class OperationsRepository(ISqlSugarClient db) : IOperationsReposi
 
         public string SiteName { get; init; } = string.Empty;
 
+        public string TestApiKey { get; init; } = string.Empty;
+
+        public int TestIntervalMinutes { get; init; }
+
+        public DateTime? LastAutoTestAt { get; init; }
+
         public string ModelSlug { get; init; } = string.Empty;
 
         public string ModelName { get; init; } = string.Empty;
+
+        public string RequestName { get; init; } = string.Empty;
+
+        public string OfficialModelId { get; init; } = string.Empty;
     }
 }

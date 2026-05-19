@@ -1,9 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { PageContainer, ProCard } from "@ant-design/pro-components";
-import { Alert, Button, Input, Table, Tag } from "antd";
+import { Alert, Button, Input, Space, Table, Tag, message } from "antd";
 import AuthGuard from "@/components/AuthGuard";
 import AdminHero, { AdminMetrics } from "@/components/AdminHero";
-import { fetchJobLogs, type JobExecutionLogListItem } from "@/services/operations";
+import {
+  fetchJobLogs,
+  rebuildRankings,
+  recalculateRisks,
+  runManualCrawl,
+  runManualTest,
+  type JobActionResponse,
+  type JobExecutionLogListItem
+} from "@/services/operations";
 
 const statusColors: Record<string, string> = {
   succeeded: "success",
@@ -16,6 +24,7 @@ export default function JobsPage() {
   const [items, setItems] = useState<JobExecutionLogListItem[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState("");
   const [keyword, setKeyword] = useState("");
 
   const filteredItems = useMemo(() => {
@@ -47,6 +56,19 @@ export default function JobsPage() {
     load();
   }, []);
 
+  async function runAction(name: string, action: () => Promise<JobActionResponse>) {
+    setActionLoading(name);
+    try {
+      const result = await action();
+      message.success(`${result.message}，影响 ${result.affectedCount} 条`);
+      await load();
+    } catch (requestError) {
+      message.error((requestError as Error).message);
+    } finally {
+      setActionLoading("");
+    }
+  }
+
   return (
     <AuthGuard>
       <PageContainer header={{ title: false }}>
@@ -55,9 +77,23 @@ export default function JobsPage() {
           title="任务日志"
           subtitle="跟踪抓价、模型测试、风险计算和排行榜聚合任务的执行结果。这里用于判断自动化链路是否健康，以及失败任务是否需要人工补偿。"
           actions={
-            <Button type="primary" size="large" onClick={load}>
-              刷新日志
-            </Button>
+            <Space wrap>
+              <Button size="large" loading={actionLoading === "crawl"} onClick={() => runAction("crawl", runManualCrawl)}>
+                手动抓价
+              </Button>
+              <Button size="large" loading={actionLoading === "test"} onClick={() => runAction("test", runManualTest)}>
+                立即自动测试
+              </Button>
+              <Button size="large" loading={actionLoading === "risk"} onClick={() => runAction("risk", recalculateRisks)}>
+                重算风险
+              </Button>
+              <Button size="large" loading={actionLoading === "ranking"} onClick={() => runAction("ranking", rebuildRankings)}>
+                重建排行
+              </Button>
+              <Button type="primary" size="large" onClick={load}>
+                刷新日志
+              </Button>
+            </Space>
           }
         />
 

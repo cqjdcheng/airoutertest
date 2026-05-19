@@ -24,5 +24,11 @@ public class CreateRelaySiteRequest
 
     public string? RecentReview { get; init; }
 
+    public bool AutoTestEnabled { get; init; }
+
+    public string? TestApiKey { get; init; }
+
+    public int TestIntervalMinutes { get; init; } = 60;
+
     public IReadOnlyList<RelaySiteOfferUpsertRequest> Offers { get; init; } = [];
 }
