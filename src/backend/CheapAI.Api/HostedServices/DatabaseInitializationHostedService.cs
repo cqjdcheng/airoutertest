@@ -54,7 +54,7 @@ public sealed class DatabaseInitializationHostedService(
 
             await EnsureExistingSchemaCompatibilityAsync(cancellationToken);
 
-            logger.LogInformation("Database schema initialization complete for {ConnectionString}", mySqlOptions.Value.ConnectionString);
+            logger.LogInformation("Database schema initialization complete.");
         }
         catch (Exception exception)
         {
