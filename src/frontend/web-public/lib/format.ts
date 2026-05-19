@@ -15,7 +15,8 @@ export function formatDateTime(value?: string | null) {
     return "暂无快照";
   }
 
-  const date = new Date(value);
+  const normalizedValue = /(?:z|[+-]\d{2}:?\d{2})$/i.test(value) ? value : `${value}Z`;
+  const date = new Date(normalizedValue);
   if (Number.isNaN(date.getTime())) {
     return value;
   }
