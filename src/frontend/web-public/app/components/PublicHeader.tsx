@@ -10,12 +10,12 @@ type PublicHeaderProps = {
 export function PublicHeader({ featuredModel: _featuredModel = "gpt-4-1-mini" }: PublicHeaderProps) {
   const branding = usePublicBranding();
   const links = [
-    { href: "/sites", label: "中转站大全" },
-    { href: "/models", label: "模型大全" },
-    { href: "/tests", label: "中转测试" },
-    { href: "/rankings", label: "价格排行" },
-    { href: "/capabilities", label: "能力榜" },
-    { href: "/articles", label: "文章" }
+    { href: "/sites", label: "中转站" },
+    { href: "/models", label: "所有模型" },
+    { href: "/tests", label: "测试记录" },
+    // { href: "/rankings", label: "价格排行" },
+    // { href: "/capabilities", label: "能力榜" },
+    { href: "/articles", label: "最新AI资讯" }
   ];
   return (
     <header className="site-header">

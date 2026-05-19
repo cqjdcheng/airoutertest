@@ -74,5 +74,7 @@ public interface IModelProviderRepository
 
     Task UpdateStatusAsync(ulong id, string status, CancellationToken cancellationToken = default);
 
+    Task DeleteAsync(ulong id, CancellationToken cancellationToken = default);
+
     Task<ModelProviderListItemResponse> EnsureAsync(string slug, string name, CancellationToken cancellationToken = default);
 }

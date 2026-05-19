@@ -345,7 +345,7 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             return Probe("D8", "响应时延", "性能", "pass", "high", 10, 0, $"First token {firstTokenMs}ms; full response {fullResponseMs}ms.");
         }
 
-        if (firstTokenMs <= 7000 && fullResponseMs <= 20000)
+        if (firstTokenMs <= 15000 && fullResponseMs <= 20000)
         {
             return Probe("D8", "响应时延", "性能", "warn", "medium", 5, 8, $"Slow but completed; first token {firstTokenMs}ms; full response {fullResponseMs}ms.");
         }
@@ -403,11 +403,15 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
     {
         var server = response.Headers.Server.ToString();
         var contentType = response.Content.Headers.ContentType?.MediaType ?? "unknown";
-        var evidence = string.IsNullOrWhiteSpace(server)
-            ? $"content-type={contentType}; no server header."
-            : $"content-type={contentType}; server header present.";
+        var hasServerHeader = !string.IsNullOrWhiteSpace(server);
+        var hasContentType = !contentType.Equals("unknown", StringComparison.OrdinalIgnoreCase);
+        var evidence = hasServerHeader
+            ? $"Captured weak upstream fingerprint: content-type={contentType}; server header present."
+            : $"Captured weak upstream fingerprint: content-type={contentType}; no server header.";
 
-        return Probe("D6", "上游指纹", "信息", "unknown", "low", 0, 0, evidence);
+        return hasServerHeader || hasContentType
+            ? Probe("D6", "上游指纹", "信息", "pass", "low", 3, 0, evidence)
+            : Probe("D6", "上游指纹", "信息", "unknown", "low", 0, 0, "No response header fingerprint was available.");
     }
 
     private static SelfTestExecutionResult FromHttpFailure(HttpStatusCode statusCode, int firstTokenMs, int fullResponseMs, HttpResponseMessage response)

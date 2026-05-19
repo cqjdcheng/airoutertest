@@ -50,4 +50,9 @@ public sealed class AdminParticipationService(IParticipationRepository participa
     {
         return participationRepository.UpdateArticleStatusAsync(id, "archived", cancellationToken);
     }
+
+    public Task DeleteArticleAsync(ulong id, CancellationToken cancellationToken = default)
+    {
+        return participationRepository.DeleteArticleAsync(id, cancellationToken);
+    }
 }

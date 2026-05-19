@@ -63,3 +63,7 @@ export function publishArticle(id: number) {
 export function archiveArticle(id: number) {
   return apiRequest<void>(`/api/v1/admin/articles/${id}/archive`, { method: "PATCH", body: "{}" });
 }
+
+export function deleteArticle(id: number) {
+  return apiRequest<void>(`/api/v1/admin/articles/${id}`, { method: "DELETE" });
+}

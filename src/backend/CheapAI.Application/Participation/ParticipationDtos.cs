@@ -231,6 +231,8 @@ public interface IParticipationRepository
     Task UpdateArticleAsync(ulong id, UpdateArticleRequest request, CancellationToken cancellationToken = default);
 
     Task UpdateArticleStatusAsync(ulong id, string status, CancellationToken cancellationToken = default);
+
+    Task DeleteArticleAsync(ulong id, CancellationToken cancellationToken = default);
 }
 
 public interface ISelfTestRunner

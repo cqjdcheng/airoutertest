@@ -1,7 +1,7 @@
-"use client";
+﻿"use client";
 
-import { FormEvent, type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
-import { postJson, type PublicEnvelope } from "@/lib/api";
+import { FormEvent, type CSSProperties, useEffect, useMemo, useState } from "react";
+import { getJson, postJson, type PublicEnvelope } from "@/lib/api";
 import { formatDateTime, riskLabel, riskTone } from "@/lib/format";
 import {
   readSelfTestHistory,
@@ -52,28 +52,11 @@ type SelfTestResponse = {
   createdAt: string;
 };
 
-type TurnstileApi = {
-  render: (
-    container: HTMLElement,
-    options: {
-      sitekey: string;
-      theme?: "light" | "dark" | "auto";
-      callback?: (token: string) => void;
-      "error-callback"?: () => void;
-      "expired-callback"?: () => void;
-    }
-  ) => string;
-  remove?: (widgetId: string) => void;
-  reset?: (widgetId: string) => void;
+type SelfTestChallenge = {
+  id: string;
+  question: string;
+  expiresAt: string;
 };
-
-declare global {
-  interface Window {
-    turnstile?: TurnstileApi;
-  }
-}
-
-const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "1x00000000000000000000AA";
 
 const fallbackModelOptions: ModelOption[] = [
   { label: "GPT 5.5", slug: "gpt-5.5", requestName: "gpt-5.5", apiType: "openai", badge: "HOT" },
@@ -87,7 +70,7 @@ const methodItems = [
   ["协议兼容", "检查 OpenAI Chat Completions 与 SSE 基础结构。"],
   ["流式完整性", "记录首 token、chunk 连续性、结束事件和异常中断。"],
   ["Token 与时延", "记录输入、输出、总 token、完整耗时和吞吐。"],
-  ["风险线索", "识别模型自称、上游特征、异常响应和降级迹象。"]
+  ["风险线索", "识别模型自称、上游特征、异常响应和降级痕迹。"]
 ];
 
 export function RelayTestPanel({
@@ -114,17 +97,16 @@ export function RelayTestPanel({
   const [selectedModel, setSelectedModel] = useState(initialPreset);
   const [customModel, setCustomModel] = useState(initialCustomModel);
   const [isStream, setIsStream] = useState(true);
-  const [turnstileToken, setTurnstileToken] = useState("");
+  const [challenge, setChallenge] = useState<SelfTestChallenge | null>(null);
+  const [challengeAnswer, setChallengeAnswer] = useState("");
   const [result, setResult] = useState<SelfTestResponse | null>(null);
   const [historyItems, setHistoryItems] = useState<SelfTestHistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [verificationOpen, setVerificationOpen] = useState(false);
   const [methodsOpen, setMethodsOpen] = useState(false);
-  const [turnstileReady, setTurnstileReady] = useState(false);
-  const [turnstileError, setTurnstileError] = useState("");
+  const [challengeLoading, setChallengeLoading] = useState(false);
+  const [challengeError, setChallengeError] = useState("");
   const [error, setError] = useState("");
-  const turnstileContainerRef = useRef<HTMLDivElement>(null);
-  const turnstileWidgetIdRef = useRef<string | null>(null);
 
   const targetModel = customModel.trim() || selectedModel.requestName || selectedModel.slug;
   const targetModelLabel = customModel.trim() || selectedModel.label;
@@ -143,64 +125,29 @@ export function RelayTestPanel({
     }
 
     let cancelled = false;
-    setTurnstileToken("");
-    setTurnstileReady(false);
-    setTurnstileError("");
+    setChallenge(null);
+    setChallengeAnswer("");
+    setChallengeError("");
+    setChallengeLoading(true);
 
-    const renderTurnstile = () => {
-      if (cancelled || !turnstileContainerRef.current || !window.turnstile) {
+    async function loadChallenge() {
+      const response = await getJson<PublicEnvelope<SelfTestChallenge>>("/api/v1/public/self-tests/challenge");
+      if (cancelled) {
         return;
       }
 
-      if (turnstileWidgetIdRef.current && window.turnstile.remove) {
-        window.turnstile.remove(turnstileWidgetIdRef.current);
+      if (response?.data) {
+        setChallenge(response.data);
+      } else {
+        setChallengeError("安全校验加载失败，请稍后重试。");
       }
-
-      turnstileWidgetIdRef.current = window.turnstile.render(turnstileContainerRef.current, {
-        sitekey: turnstileSiteKey,
-        theme: "light",
-        callback: (token) => {
-          setTurnstileToken(token);
-          setTurnstileError("");
-        },
-        "error-callback": () => {
-          setTurnstileToken("");
-          setTurnstileError("安全校验未完成，请重试。");
-        },
-        "expired-callback": () => {
-          setTurnstileToken("");
-        }
-      });
-      setTurnstileReady(true);
-    };
-
-    if (window.turnstile) {
-      renderTurnstile();
-    } else {
-      const existingScript = document.getElementById("cloudflare-turnstile-script") as HTMLScriptElement | null;
-      const script = existingScript ?? document.createElement("script");
-      script.id = "cloudflare-turnstile-script";
-      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
-      script.async = true;
-      script.defer = true;
-      script.onload = renderTurnstile;
-      script.onerror = () => {
-        if (!cancelled) {
-          setTurnstileError("安全组件加载失败，请稍后重试。");
-        }
-      };
-
-      if (!existingScript) {
-        document.head.appendChild(script);
-      }
+      setChallengeLoading(false);
     }
+
+    loadChallenge();
 
     return () => {
       cancelled = true;
-      if (turnstileWidgetIdRef.current && window.turnstile?.remove) {
-        window.turnstile.remove(turnstileWidgetIdRef.current);
-      }
-      turnstileWidgetIdRef.current = null;
     };
   }, [verificationOpen]);
 
@@ -211,15 +158,15 @@ export function RelayTestPanel({
   }
 
   async function runTest() {
-    const verifiedToken = turnstileToken;
+    const verifiedAnswer = challengeAnswer.trim();
 
-    if (!verifiedToken) {
-      setTurnstileError("请先完成安全校验。");
+    if (!challenge || !verifiedAnswer) {
+      setChallengeError("请先完成安全校验。");
       return;
     }
 
     setVerificationOpen(false);
-    setTurnstileError("");
+    setChallengeError("");
     setLoading(true);
     setError("");
 
@@ -229,8 +176,8 @@ export function RelayTestPanel({
       apiKey,
       isStream,
       testMode: "comprehensive",
-      challengeId: "cloudflare-turnstile",
-      challengeAnswer: verifiedToken
+      challengeId: challenge.id,
+      challengeAnswer: verifiedAnswer
     });
 
     if (response?.data) {
@@ -256,7 +203,7 @@ export function RelayTestPanel({
       setError("测试请求失败，请检查站点地址、模型名、API Key 或安全校验状态。");
     }
 
-    setTurnstileToken("");
+    setChallengeAnswer("");
     setLoading(false);
   }
 
@@ -284,7 +231,7 @@ export function RelayTestPanel({
             <input
               className="form-input"
               onChange={(event) => setSiteUrl(event.target.value)}
-              placeholder="https://api.example.com/v1"
+              placeholder="https://api.example.com"
               required
               type="url"
               value={siteUrl}
@@ -338,7 +285,7 @@ export function RelayTestPanel({
         <div className="relay-test-options mt-5">
           <label className="relay-switch">
             <input checked={isStream} onChange={(event) => setIsStream(event.target.checked)} type="checkbox" />
-            <span>流式测速</span>
+            <span>流式测试</span>
           </label>
         </div>
 
@@ -364,17 +311,27 @@ export function RelayTestPanel({
             </div>
 
             <div className="turnstile-shell mt-5">
-              <div ref={turnstileContainerRef} className="turnstile-container" />
-              {!turnstileReady && !turnstileError && !turnstileToken ? <span>加载中...</span> : null}
-              {turnstileToken ? <span className="turnstile-status">安全校验已完成</span> : null}
-              {turnstileError ? <span className="relay-error">{turnstileError}</span> : null}
+              {challengeLoading ? <span>加载中...</span> : null}
+              {challenge ? (
+                <label className="custom-model-field">
+                  <span>{challenge.question}</span>
+                  <input
+                    className="form-input"
+                    inputMode="numeric"
+                    onChange={(event) => setChallengeAnswer(event.target.value)}
+                    placeholder="请输入答案"
+                    value={challengeAnswer}
+                  />
+                </label>
+              ) : null}
+              {challengeError ? <span className="relay-error">{challengeError}</span> : null}
             </div>
 
             <div className="challenge-modal__actions">
               <button className="secondary-button" disabled={loading} onClick={() => setVerificationOpen(false)} type="button">
                 取消
               </button>
-              <button className="primary-button" disabled={loading || !turnstileToken} onClick={runTest} type="button">
+              <button className="primary-button" disabled={loading || challengeLoading || !challenge || !challengeAnswer.trim()} onClick={runTest} type="button">
                 {loading ? "检测中..." : "继续测试"}
               </button>
             </div>

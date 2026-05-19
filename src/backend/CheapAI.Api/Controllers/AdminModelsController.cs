@@ -72,4 +72,11 @@ public sealed class AdminModelsController(ModelAdminService modelAdminService) :
         await modelAdminService.UpdateMetadataAsync(id, request, cancellationToken);
         return Ok(ApiResponseFactory.Success(HttpContext));
     }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(ulong id, CancellationToken cancellationToken)
+    {
+        await modelAdminService.DeleteAsync(id, cancellationToken);
+        return Ok(ApiResponseFactory.Success(HttpContext));
+    }
 }

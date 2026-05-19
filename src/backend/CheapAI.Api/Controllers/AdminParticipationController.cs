@@ -72,4 +72,11 @@ public sealed class AdminParticipationController(AdminParticipationService admin
         await adminParticipationService.ArchiveArticleAsync(id, cancellationToken);
         return Ok(ApiResponseFactory.Success(HttpContext));
     }
+
+    [HttpDelete("articles/{id}")]
+    public async Task<IActionResult> DeleteArticle(ulong id, CancellationToken cancellationToken)
+    {
+        await adminParticipationService.DeleteArticleAsync(id, cancellationToken);
+        return Ok(ApiResponseFactory.Success(HttpContext));
+    }
 }

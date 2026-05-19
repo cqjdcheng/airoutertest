@@ -96,6 +96,17 @@ public sealed class RelaySiteAdminService(
         await relaySiteRepository.UpdateStatusAsync(id, request.Status, currentAdminAccessor.AdminUserId, cancellationToken);
     }
 
+    public async Task DeleteAsync(ulong id, CancellationToken cancellationToken = default)
+    {
+        var existing = await relaySiteRepository.GetByIdAsync(id, cancellationToken);
+        if (existing is null)
+        {
+            throw new AppNotFoundException("站点不存在");
+        }
+
+        await relaySiteRepository.DeleteAsync(id, currentAdminAccessor.AdminUserId, cancellationToken);
+    }
+
     public Task<IReadOnlyList<RelayPricingPreviewItemResponse>> PreviewPricingAsync(
         RelayPricingPreviewRequest request,
         CancellationToken cancellationToken = default)

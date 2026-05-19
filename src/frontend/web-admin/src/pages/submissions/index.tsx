@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type Key } from "react";
 import { PageContainer, ProCard } from "@ant-design/pro-components";
-import { Button, Input, message, Space, Table, Tag } from "antd";
+import { Button, Input, message, Popconfirm, Space, Table, Tag } from "antd";
 import AuthGuard from "@/components/AuthGuard";
 import AdminHero, { AdminMetrics } from "@/components/AdminHero";
 import {
@@ -20,6 +20,7 @@ export default function SubmissionsPage() {
   const [items, setItems] = useState<SiteSubmissionListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [keyword, setKeyword] = useState("");
+  const [selectedSubmissionIds, setSelectedSubmissionIds] = useState<Key[]>([]);
 
   const filteredItems = useMemo(() => {
     const normalizedKeyword = keyword.trim().toLowerCase();
@@ -54,6 +55,24 @@ export default function SubmissionsPage() {
     await load();
   }
 
+  async function batchReview(approved: boolean) {
+    const ids = selectedSubmissionIds.map(Number);
+    if (!ids.length) {
+      return;
+    }
+
+    if (approved) {
+      await Promise.all(ids.map((id) => approveSubmission(id)));
+      message.success(`已通过 ${ids.length} 条提交`);
+    } else {
+      await Promise.all(ids.map((id) => rejectSubmission(id)));
+      message.success(`已拒绝 ${ids.length} 条提交`);
+    }
+
+    setSelectedSubmissionIds([]);
+    await load();
+  }
+
   useEffect(() => {
     load();
   }, []);
@@ -82,19 +101,36 @@ export default function SubmissionsPage() {
         />
 
         <ProCard className="cheapai-admin-card" title="提交列表">
-          <Input.Search
-            allowClear
-            placeholder="搜索站点、地址、联系方式"
-            style={{ width: 360, marginBottom: 16 }}
-            onSearch={setKeyword}
-            onChange={(event) => setKeyword(event.target.value)}
-          />
+          <Space wrap style={{ marginBottom: 16 }}>
+            <Input.Search
+              allowClear
+              placeholder="搜索站点、地址、联系方式"
+              style={{ width: 360 }}
+              onSearch={setKeyword}
+              onChange={(event) => setKeyword(event.target.value)}
+            />
+            <Popconfirm title={`确认通过选中的 ${selectedSubmissionIds.length} 条提交？`} onConfirm={() => batchReview(true)}>
+              <Button disabled={!selectedSubmissionIds.length}>
+                批量通过
+              </Button>
+            </Popconfirm>
+            <Popconfirm title={`确认拒绝选中的 ${selectedSubmissionIds.length} 条提交？`} onConfirm={() => batchReview(false)}>
+              <Button danger disabled={!selectedSubmissionIds.length}>
+                批量拒绝
+              </Button>
+            </Popconfirm>
+          </Space>
           <Table
             className="cheapai-admin-table"
             loading={loading}
             rowKey="id"
             dataSource={filteredItems}
             pagination={{ pageSize: 10 }}
+            rowSelection={{
+              selectedRowKeys: selectedSubmissionIds,
+              onChange: setSelectedSubmissionIds,
+              getCheckboxProps: (record) => ({ disabled: record.reviewStatus !== "pending" })
+            }}
             columns={[
               { title: "站点", dataIndex: "siteName" },
               { title: "地址", dataIndex: "siteUrl", ellipsis: true },

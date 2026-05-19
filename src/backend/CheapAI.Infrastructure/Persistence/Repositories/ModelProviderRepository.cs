@@ -148,6 +148,18 @@ public sealed class ModelProviderRepository(ISqlSugarClient db) : IModelProvider
             .ExecuteCommandAsync(cancellationToken);
     }
 
+    public Task DeleteAsync(ulong id, CancellationToken cancellationToken = default)
+    {
+        return db.Updateable<ModelProviderEntity>()
+            .SetColumns(x => new ModelProviderEntity
+            {
+                DeletedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            })
+            .Where(x => x.Id == id && x.DeletedAt == null)
+            .ExecuteCommandAsync(cancellationToken);
+    }
+
     public async Task<ModelProviderListItemResponse> EnsureAsync(string slug, string name, CancellationToken cancellationToken = default)
     {
         var existing = await GetBySlugAsync(slug, cancellationToken);

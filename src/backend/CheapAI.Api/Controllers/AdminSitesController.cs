@@ -51,4 +51,11 @@ public sealed class AdminSitesController(RelaySiteAdminService relaySiteAdminSer
         await relaySiteAdminService.UpdateStatusAsync(id, request, cancellationToken);
         return Ok(ApiResponseFactory.Success(HttpContext));
     }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(ulong id, CancellationToken cancellationToken)
+    {
+        await relaySiteAdminService.DeleteAsync(id, cancellationToken);
+        return Ok(ApiResponseFactory.Success(HttpContext));
+    }
 }

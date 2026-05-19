@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.UMI_APP_API_BASE_URL ?? "http://127.0.0.1:5157";
+const API_BASE_URL = process.env.UMI_APP_API_BASE_URL || "";
 const ACCESS_TOKEN_KEY = "cheapai_admin_access_token";
 
 export type AdminProfile = {

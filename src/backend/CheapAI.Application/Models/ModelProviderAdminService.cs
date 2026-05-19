@@ -61,6 +61,17 @@ public sealed class ModelProviderAdminService(IModelProviderRepository modelProv
         await modelProviderRepository.UpdateStatusAsync(id, request.Status, cancellationToken);
     }
 
+    public async Task DeleteAsync(ulong id, CancellationToken cancellationToken = default)
+    {
+        var existing = await modelProviderRepository.GetByIdAsync(id, cancellationToken);
+        if (existing is null)
+        {
+            throw new AppNotFoundException("模型提供商不存在");
+        }
+
+        await modelProviderRepository.DeleteAsync(id, cancellationToken);
+    }
+
     private static UpdateModelProviderRequest Normalize(CreateModelProviderRequest request, string slug)
     {
         return new UpdateModelProviderRequest

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type Key } from "react";
 import {
   DrawerForm,
   ProCard,
@@ -6,12 +6,13 @@ import {
   ProFormText,
   ProFormTextArea
 } from "@ant-design/pro-components";
-import { Button, Form, Input, Space, Table, Tag, message } from "antd";
+import { Button, Form, Input, Popconfirm, Space, Table, Tag, message } from "antd";
 import AuthGuard from "@/components/AuthGuard";
 import AdminPage from "@/components/AdminPage";
 import {
   archiveArticle,
   createArticle,
+  deleteArticle,
   fetchArticles,
   publishArticle,
   type ArticleListItem
@@ -36,15 +37,17 @@ export default function ArticlesPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [keyword, setKeyword] = useState("");
+  const [selectedArticleIds, setSelectedArticleIds] = useState<Key[]>([]);
   const [form] = Form.useForm<ArticleFormValues>();
 
   const filteredItems = useMemo(() => {
     const normalizedKeyword = keyword.trim().toLowerCase();
     if (!normalizedKeyword) {
-      return items;
+      return items.filter((item) => item.status !== "archived");
     }
 
     return items.filter((item) =>
+      item.status !== "archived" &&
       [item.title, item.slug, item.summary, item.status]
         .some((value) => String(value ?? "").toLowerCase().includes(normalizedKeyword))
     );
@@ -54,7 +57,7 @@ export default function ArticlesPage() {
     setLoading(true);
     try {
       const result = await fetchArticles(1, 80);
-      setItems(result.items);
+      setItems(result.items.filter((item) => item.status !== "archived"));
     } finally {
       setLoading(false);
     }
@@ -95,6 +98,37 @@ export default function ArticlesPage() {
     await load();
   }
 
+  async function deleteSingleArticle(id: number) {
+    await deleteArticle(id);
+    message.success("文章已删除");
+    setSelectedArticleIds((current) => current.filter((selectedId) => selectedId !== id));
+    await load();
+  }
+
+  async function batchPublishArticles() {
+    const ids = selectedArticleIds.map(Number);
+    if (!ids.length) {
+      return;
+    }
+
+    await Promise.all(ids.map((id) => publishArticle(id)));
+    message.success(`已发布 ${ids.length} 篇文章`);
+    setSelectedArticleIds([]);
+    await load();
+  }
+
+  async function batchDeleteArticles() {
+    const ids = selectedArticleIds.map(Number);
+    if (!ids.length) {
+      return;
+    }
+
+    await Promise.all(ids.map((id) => deleteArticle(id)));
+    message.success(`已删除 ${ids.length} 篇文章`);
+    setSelectedArticleIds([]);
+    await load();
+  }
+
   useEffect(() => {
     void load();
   }, []);
@@ -120,13 +154,23 @@ export default function ArticlesPage() {
         ]}
       >
         <ProCard className="cheapai-admin-card" title="文章列表">
-          <Input.Search
-            allowClear
-            placeholder="搜索标题、Slug、摘要"
-            style={{ width: 360, marginBottom: 16 }}
-            onSearch={setKeyword}
-            onChange={(event) => setKeyword(event.target.value)}
-          />
+          <Space wrap style={{ marginBottom: 16 }}>
+            <Input.Search
+              allowClear
+              placeholder="搜索标题、Slug、摘要"
+              style={{ width: 360 }}
+              onSearch={setKeyword}
+              onChange={(event) => setKeyword(event.target.value)}
+            />
+            <Button disabled={!selectedArticleIds.length} onClick={batchPublishArticles}>
+              批量发布
+            </Button>
+            <Popconfirm title={`确认删除选中的 ${selectedArticleIds.length} 篇文章？`} onConfirm={batchDeleteArticles}>
+              <Button danger disabled={!selectedArticleIds.length}>
+                批量删除
+              </Button>
+            </Popconfirm>
+          </Space>
 
           <Table
             className="cheapai-admin-table"
@@ -134,6 +178,10 @@ export default function ArticlesPage() {
             rowKey="id"
             dataSource={filteredItems}
             pagination={{ pageSize: 10 }}
+            rowSelection={{
+              selectedRowKeys: selectedArticleIds,
+              onChange: setSelectedArticleIds
+            }}
             columns={[
               { title: "标题", dataIndex: "title" },
               { title: "Slug", dataIndex: "slug" },
@@ -151,9 +199,11 @@ export default function ArticlesPage() {
                     <Button type="link" disabled={record.status === "published"} onClick={() => changeStatus(record.id, "published")}>
                       发布
                     </Button>
-                    <Button type="link" disabled={record.status === "archived"} onClick={() => changeStatus(record.id, "archived")}>
-                      归档
-                    </Button>
+                    <Popconfirm title="确认删除该文章？删除后列表不再显示。" onConfirm={() => deleteSingleArticle(record.id)}>
+                      <Button type="link" danger>
+                        删除
+                      </Button>
+                    </Popconfirm>
                   </Space>
                 )
               }

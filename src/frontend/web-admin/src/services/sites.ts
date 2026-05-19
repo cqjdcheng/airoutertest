@@ -145,6 +145,10 @@ export async function updateSiteStatus(id: number, status: string) {
   });
 }
 
+export async function deleteSite(id: number) {
+  return apiRequest<void>(`/api/v1/admin/sites/${id}`, { method: "DELETE" });
+}
+
 export async function previewSitePricing(payload: {
   baseUrl: string;
   providerType?: string;

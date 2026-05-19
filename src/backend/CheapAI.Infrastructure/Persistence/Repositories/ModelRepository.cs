@@ -257,6 +257,18 @@ public sealed class ModelRepository(ISqlSugarClient db) : IModelRepository
             .ExecuteCommandAsync(cancellationToken);
     }
 
+    public Task DeleteAsync(ulong id, CancellationToken cancellationToken = default)
+    {
+        return db.Updateable<AiModelEntity>()
+            .SetColumns(x => new AiModelEntity
+            {
+                DeletedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            })
+            .Where(x => x.Id == id && x.DeletedAt == null)
+            .ExecuteCommandAsync(cancellationToken);
+    }
+
     public Task UpdateMetadataAsync(ulong id, UpdateModelMetadataRequest request, CancellationToken cancellationToken = default)
     {
         return db.Updateable<AiModelEntity>()

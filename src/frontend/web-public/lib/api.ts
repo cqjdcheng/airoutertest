@@ -4,8 +4,7 @@ const serverApiBaseUrl =
   "http://127.0.0.1:5157";
 
 const browserApiBaseUrl =
-  process.env.NEXT_PUBLIC_API_BASE_URL ??
-  "http://127.0.0.1:5157";
+  process.env.NEXT_PUBLIC_API_BASE_URL || "";
 
 export const apiBaseUrl = typeof window === "undefined" ? serverApiBaseUrl : browserApiBaseUrl;
 

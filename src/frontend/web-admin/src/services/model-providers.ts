@@ -61,3 +61,7 @@ export async function updateModelProviderStatus(id: number, status: string) {
     body: JSON.stringify({ status })
   });
 }
+
+export async function deleteModelProvider(id: number) {
+  return apiRequest<void>(`/api/v1/admin/model-providers/${id}`, { method: "DELETE" });
+}

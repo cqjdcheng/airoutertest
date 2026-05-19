@@ -216,6 +216,10 @@ public sealed class ParticipationRepository(ISqlSugarClient db, IOptions<MySqlOp
         {
             query = query.Where(x => x.Status == "published");
         }
+        else
+        {
+            query = query.Where(x => x.Status != "archived");
+        }
 
         RefAsync<int> total = 0;
         var items = await query
@@ -297,6 +301,11 @@ public sealed class ParticipationRepository(ISqlSugarClient db, IOptions<MySqlOp
             })
             .Where(x => x.Id == id)
             .ExecuteCommandAsync(cancellationToken);
+    }
+
+    public Task DeleteArticleAsync(ulong id, CancellationToken cancellationToken = default)
+    {
+        return UpdateArticleStatusAsync(id, "archived", cancellationToken);
     }
 
     private async Task<TestRecordEntity> CreateUnifiedTestRecordAsync(

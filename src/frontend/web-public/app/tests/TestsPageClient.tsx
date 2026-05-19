@@ -72,10 +72,18 @@ export function TestsPageClient({
   const [activeTab, setActiveTab] = useState<"mine" | "all">("all");
   const [historyItems, setHistoryItems] = useState<SelfTestHistoryItem[]>([]);
   const [myRecords, setMyRecords] = useState<TestRecord[]>([]);
+  const [allRecords, setAllRecords] = useState<TestRecord[]>(payload?.items ?? []);
+  const [allRecordsLoading, setAllRecordsLoading] = useState(false);
+  const [allRecordsTotal, setAllRecordsTotal] = useState(payload?.total ?? 0);
   const [myRecordsLoading, setMyRecordsLoading] = useState(false);
   const [selectedDetail, setSelectedDetail] = useState<TestRecordDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
+
+  useEffect(() => {
+    setAllRecords(payload?.items ?? []);
+    setAllRecordsTotal(payload?.total ?? 0);
+  }, [payload]);
 
   useEffect(() => {
     const syncHistory = () => setHistoryItems(readSelfTestHistory());
@@ -148,14 +156,25 @@ export function TestsPageClient({
     setDetailLoading(false);
   }
 
+  async function refreshAllRecords() {
+    setAllRecordsLoading(true);
+    const response = await getJson<PublicEnvelope<PagedResult<TestRecord>>>("/api/v1/public/tests/latest?page=1&pageSize=20");
+    if (response?.data) {
+      setAllRecords(response.data.items);
+      setAllRecordsTotal(response.data.total);
+    }
+    setAllRecordsLoading(false);
+  }
+
   function handleSelfTestCompleted() {
     setHistoryItems(readSelfTestHistory());
+    refreshAllRecords();
     setActiveTab("mine");
   }
 
-  const allRecords = payload?.items ?? [];
   const visibleRecords = activeTab === "mine" ? myRecords : allRecords;
-  const visibleLoading = activeTab === "mine" && myRecordsLoading;
+  const visibleLoading = activeTab === "mine" ? myRecordsLoading : allRecordsLoading;
+  const resolvedMaxPages = Math.max(1, Math.ceil(Math.min(allRecordsTotal, 200) / 20));
 
   return (
     <>
@@ -210,7 +229,7 @@ export function TestsPageClient({
           onDetail={openDetail}
         />
 
-        {activeTab === "all" ? <Pagination page={page} maxPages={maxPages} /> : null}
+        {activeTab === "all" ? <Pagination page={page} maxPages={Math.max(maxPages, resolvedMaxPages)} /> : null}
       </section>
 
       {selectedDetail ? (

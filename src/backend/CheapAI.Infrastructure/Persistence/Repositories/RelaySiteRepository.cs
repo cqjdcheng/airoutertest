@@ -111,7 +111,7 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
         {
             db.Ado.BeginTran();
             var siteId = (ulong)await db.Insertable(entity).ExecuteReturnBigIdentityAsync();
-            await UpsertOffersCoreAsync(siteId, request.Offers, cancellationToken);
+            await UpsertOffersCoreAsync(siteId, request.Offers, archiveMissing: false, cancellationToken);
             db.Ado.CommitTran();
             return siteId;
         }
@@ -147,7 +147,7 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
                 .Where(x => x.Id == id && x.DeletedAt == null)
                 .ExecuteCommandAsync(cancellationToken);
 
-            await UpsertOffersCoreAsync(id, request.Offers, cancellationToken);
+            await UpsertOffersCoreAsync(id, request.Offers, archiveMissing: true, cancellationToken);
             db.Ado.CommitTran();
         }
         catch
@@ -170,11 +170,25 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
             .ExecuteCommandAsync(cancellationToken);
     }
 
+    public Task DeleteAsync(ulong id, ulong? adminUserId, CancellationToken cancellationToken = default)
+    {
+        return db.Updateable<RelaySiteEntity>()
+            .SetColumns(x => new RelaySiteEntity
+            {
+                Status = RelaySiteStatusValue.Archived,
+                DeletedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+                UpdatedBy = adminUserId
+            })
+            .Where(x => x.Id == id && x.DeletedAt == null)
+            .ExecuteCommandAsync(cancellationToken);
+    }
+
     private async Task<IReadOnlyList<RelaySiteOfferResponse>> LoadOffersAsync(ulong siteId, CancellationToken cancellationToken)
     {
         return await db.Queryable<RelayOfferEntity, AiModelEntity>(
                 (offer, model) => offer.ModelId == model.Id)
-            .Where((offer, model) => offer.SiteId == siteId && model.DeletedAt == null)
+            .Where((offer, model) => offer.SiteId == siteId && offer.Status != "archived" && model.DeletedAt == null)
             .OrderBy((offer, model) => offer.SourceType, OrderByType.Asc)
             .OrderBy((offer, model) => model.SortOrder, OrderByType.Asc)
             .OrderBy((offer, model) => offer.UpdatedAt, OrderByType.Desc)
@@ -228,8 +242,14 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
             .ToListAsync(cancellationToken);
     }
 
-    private async Task UpsertOffersCoreAsync(ulong siteId, IReadOnlyList<RelaySiteOfferUpsertRequest> offers, CancellationToken cancellationToken)
+    private async Task UpsertOffersCoreAsync(
+        ulong siteId,
+        IReadOnlyList<RelaySiteOfferUpsertRequest> offers,
+        bool archiveMissing,
+        CancellationToken cancellationToken)
     {
+        var touchedOfferIds = new List<ulong>();
+
         foreach (var offer in offers)
         {
             var modelId = await ResolveModelIdAsync(offer, cancellationToken);
@@ -264,7 +284,8 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
 
             if (existing is null)
             {
-                await db.Insertable(entity).ExecuteCommandAsync(cancellationToken);
+                var insertedId = (ulong)await db.Insertable(entity).ExecuteReturnBigIdentityAsync();
+                touchedOfferIds.Add(insertedId);
                 continue;
             }
 
@@ -272,7 +293,28 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
             entity.CreatedAt = existing.CreatedAt;
             entity.CrawledAt = existing.CrawledAt;
             await db.Updateable(entity).ExecuteCommandAsync(cancellationToken);
+            touchedOfferIds.Add(existing.Id);
         }
+
+        if (!archiveMissing)
+        {
+            return;
+        }
+
+        var update = db.Updateable<RelayOfferEntity>()
+            .SetColumns(x => new RelayOfferEntity
+            {
+                Status = "archived",
+                UpdatedAt = DateTime.UtcNow
+            })
+            .Where(x => x.SiteId == siteId);
+
+        if (touchedOfferIds.Count > 0)
+        {
+            update = update.Where(x => !touchedOfferIds.Contains(x.Id));
+        }
+
+        await update.ExecuteCommandAsync(cancellationToken);
     }
 
     private async Task<ulong> ResolveModelIdAsync(RelaySiteOfferUpsertRequest offer, CancellationToken cancellationToken)

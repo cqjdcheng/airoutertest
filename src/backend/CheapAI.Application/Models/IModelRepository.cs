@@ -22,6 +22,8 @@ public interface IModelRepository
 
     Task UpdateStatusAsync(ulong id, string status, CancellationToken cancellationToken = default);
 
+    Task DeleteAsync(ulong id, CancellationToken cancellationToken = default);
+
     Task UpdateMetadataAsync(ulong id, UpdateModelMetadataRequest request, CancellationToken cancellationToken = default);
 
     Task<long> CountActiveAsync(CancellationToken cancellationToken = default);

@@ -1,7 +1,7 @@
 import { LockOutlined, UserOutlined } from "@ant-design/icons";
 import { LoginForm, ProFormText } from "@ant-design/pro-components";
 import { history, useModel } from "@umijs/max";
-import { Alert, message } from "antd";
+import { message } from "antd";
 import { login, setAccessToken } from "@/services/api";
 
 export default function LoginPage() {
@@ -14,13 +14,6 @@ export default function LoginPage() {
           <div className="cheapai-admin-eyebrow">CheapAI Console</div>
           <h1>管理可信数据资产</h1>
           <p>登录后维护中转站点、模型、报价、测试记录、风险证据和内容审核，管理端操作收敛到统一工作流。</p>
-          <Alert
-            showIcon
-            type="info"
-            message="本地种子账号"
-            description="admin / ChangeMe123!"
-            style={{ marginTop: 20, borderRadius: 16 }}
-          />
         </div>
 
         <LoginForm

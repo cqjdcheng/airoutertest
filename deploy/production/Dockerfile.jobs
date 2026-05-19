@@ -1,0 +1,17 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+COPY CheapAI.slnx ./
+COPY src/backend/CheapAI.BackgroundJobs/CheapAI.BackgroundJobs.csproj src/backend/CheapAI.BackgroundJobs/
+COPY src/backend/CheapAI.Application/CheapAI.Application.csproj src/backend/CheapAI.Application/
+COPY src/backend/CheapAI.Domain/CheapAI.Domain.csproj src/backend/CheapAI.Domain/
+COPY src/backend/CheapAI.Infrastructure/CheapAI.Infrastructure.csproj src/backend/CheapAI.Infrastructure/
+RUN dotnet restore src/backend/CheapAI.BackgroundJobs/CheapAI.BackgroundJobs.csproj
+
+COPY src/backend src/backend
+RUN dotnet publish src/backend/CheapAI.BackgroundJobs/CheapAI.BackgroundJobs.csproj -c Release -o /app/publish --no-restore
+
+FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
+WORKDIR /app
+COPY --from=build /app/publish .
+ENTRYPOINT ["dotnet", "CheapAI.BackgroundJobs.dll"]

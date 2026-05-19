@@ -16,5 +16,7 @@ public interface IRelaySiteRepository
 
     Task UpdateStatusAsync(ulong id, string status, ulong? adminUserId, CancellationToken cancellationToken = default);
 
+    Task DeleteAsync(ulong id, ulong? adminUserId, CancellationToken cancellationToken = default);
+
     Task<long> CountActiveAsync(CancellationToken cancellationToken = default);
 }

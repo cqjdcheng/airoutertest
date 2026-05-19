@@ -1,0 +1,11 @@
+.git
+.tmp
+.next
+node_modules
+bin
+obj
+artifacts
+.playwright-mcp
+.serena
+.spec-workflow
+*.log

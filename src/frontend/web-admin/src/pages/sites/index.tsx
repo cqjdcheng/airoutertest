@@ -1,5 +1,5 @@
 import { PlusOutlined, SearchOutlined } from "@ant-design/icons";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type Key } from "react";
 import {
   ProCard,
   ProForm,
@@ -7,12 +7,13 @@ import {
   ProFormText,
   ProFormTextArea
 } from "@ant-design/pro-components";
-import { Alert, Button, Divider, Empty, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, message } from "antd";
+import { Alert, Button, Empty, Form, Input, Modal, Popconfirm, Select, Space, Table, Tabs, Tag, message } from "antd";
 import AuthGuard from "@/components/AuthGuard";
 import AdminPage from "@/components/AdminPage";
 import { fetchModels, previewModelImport, type ModelListItem } from "@/services/models";
 import {
   createSite,
+  deleteSite,
   fetchSite,
   fetchSites,
   previewSitePricing,
@@ -37,13 +38,21 @@ type SiteFormValues = {
   docsUrl?: string;
   inviteUrl?: string;
   recentReview?: string;
+  rechargeRatio?: number;
+  bonusRatio?: number;
   offers?: RelaySiteOffer[];
+};
+
+type OfferTableRow = RelaySiteOffer & {
+  rowIndex: number;
 };
 
 const defaultSiteValues: SiteFormValues = {
   supportsRefund: false,
   supportsInvoice: false,
   hasDocs: false,
+  rechargeRatio: 1,
+  bonusRatio: 0,
   offers: []
 };
 
@@ -63,8 +72,13 @@ const statusColors: Record<string, string> = {
 
 const offerStatusOptions = [
   { label: "有效", value: "active" },
-  { label: "隐藏", value: "hidden" },
-  { label: "归档", value: "archived" }
+  { label: "隐藏", value: "hidden" }
+];
+
+const offerStatusFilterOptions = [
+  { label: "有效模型", value: "active" },
+  { label: "隐藏模型", value: "hidden" },
+  { label: "全部模型", value: "all" }
 ];
 
 function toNumber(value: unknown) {
@@ -76,26 +90,46 @@ function toNumber(value: unknown) {
   return Number.isFinite(numericValue) ? numericValue : undefined;
 }
 
-function normalizeOffers(offers?: RelaySiteOffer[]) {
+function normalizeOffers(offers: RelaySiteOffer[] | undefined, models: ModelListItem[], rechargeRatio: number, bonusRatio: number) {
   return (offers ?? [])
     .filter((offer) => offer.modelId || offer.officialModelId || offer.requestName || offer.displayName)
-    .map((offer) => ({
+    .map((offer) => {
+      const model = offer.modelId ? models.find((item) => item.id === offer.modelId) : undefined;
+      const requestName = offer.requestName?.trim() || model?.requestName || offer.displayName?.trim() || offer.officialModelId?.trim();
+
+      return {
       modelId: offer.modelId,
       modelSlug: offer.modelSlug,
-      vendor: offer.vendor?.trim() || "Custom",
-      officialModelId: offer.officialModelId?.trim(),
-      requestName: offer.requestName?.trim() || offer.officialModelId?.trim(),
-      apiType: offer.apiType || "openai",
-      displayName: offer.displayName?.trim() || offer.requestName?.trim() || offer.officialModelId?.trim(),
-      officialInputPriceUsd: toNumber(offer.officialInputPriceUsd),
-      officialOutputPriceUsd: toNumber(offer.officialOutputPriceUsd),
+      vendor: offer.vendor?.trim() || model?.vendor || "Custom",
+      officialModelId: offer.officialModelId?.trim() || model?.officialModelId || requestName,
+      requestName,
+      apiType: offer.apiType || model?.apiType || "openai",
+      displayName: offer.displayName?.trim() || model?.displayName || requestName,
+      officialInputPriceUsd: model?.officialInputPriceUsd,
+      officialOutputPriceUsd: model?.officialOutputPriceUsd,
       siteInputPriceUsd: toNumber(offer.siteInputPriceUsd),
       siteOutputPriceUsd: toNumber(offer.siteOutputPriceUsd),
-      rechargeRatio: toNumber(offer.rechargeRatio) ?? 1,
-      bonusRatio: toNumber(offer.bonusRatio) ?? 0,
+      rechargeRatio,
+      bonusRatio,
       sourceType: offer.sourceType || "manual",
       status: offer.status || "active"
-    }));
+    };
+    });
+}
+
+function OfficialPriceHint({ form, models }: { form: ReturnType<typeof Form.useForm<RelaySiteOffer>>[0]; models: ModelListItem[] }) {
+  const modelId = Form.useWatch("modelId", form);
+  const model = models.find((item) => item.id === modelId);
+
+  if (!model) {
+    return null;
+  }
+
+  return (
+    <Tag>
+      官方价 {model.officialInputPriceUsd ?? "-"} / {model.officialOutputPriceUsd ?? "-"}
+    </Tag>
+  );
 }
 
 export default function SitesPage() {
@@ -123,7 +157,15 @@ export default function SitesPage() {
   const [pricingBonusRatio, setPricingBonusRatio] = useState(0);
   const [pricingRateBaseline, setPricingRateBaseline] = useState(0.002);
   const [pricingGroupId, setPricingGroupId] = useState("");
+  const [offerModalOpen, setOfferModalOpen] = useState(false);
+  const [editingOfferIndex, setEditingOfferIndex] = useState<number | null>(null);
+  const [offerStatusFilter, setOfferStatusFilter] = useState("active");
+  const [selectedSiteIds, setSelectedSiteIds] = useState<Key[]>([]);
+  const [selectedOfferRows, setSelectedOfferRows] = useState<Key[]>([]);
+  const [siteOffers, setSiteOffers] = useState<RelaySiteOffer[]>([]);
+  const [siteFormValues, setSiteFormValues] = useState<SiteFormValues>(defaultSiteValues);
   const [form] = Form.useForm<SiteFormValues>();
+  const [offerForm] = Form.useForm<RelaySiteOffer>();
 
   const modelOptions = useMemo(
     () =>
@@ -138,6 +180,10 @@ export default function SitesPage() {
     const normalizedKeyword = keyword.trim().toLowerCase();
 
     return items.filter((item) => {
+      if (item.status === "archived") {
+        return false;
+      }
+
       const keywordMatched = [item.name, item.slug, item.baseUrl, item.description]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(normalizedKeyword));
@@ -151,7 +197,7 @@ export default function SitesPage() {
 
     try {
       const [siteResult, modelResult] = await Promise.all([fetchSites(1, 80), fetchModels(1, 200)]);
-      setItems(siteResult.items);
+      setItems(siteResult.items.filter((item) => item.status !== "archived"));
       setModels(modelResult.items);
       setError("");
     } catch (requestError) {
@@ -169,8 +215,9 @@ export default function SitesPage() {
     setPricingBonusRatio(0);
     setPricingRateBaseline(0.002);
     setPricingGroupId("");
-    form.resetFields();
-    form.setFieldsValue(defaultSiteValues);
+    setSiteOffers([]);
+    setSelectedOfferRows([]);
+    setSiteFormValues({ ...defaultSiteValues, rechargeRatio: 1, bonusRatio: 0 });
     setFormOpen(true);
   }
 
@@ -186,12 +233,18 @@ export default function SitesPage() {
       setPricingBonusRatio(0);
       setPricingRateBaseline(0.002);
       setPricingGroupId("");
-      form.resetFields();
-      form.setFieldsValue({
+      const offers = detail.offers?.map((offer) => ({ ...offer, displayName: offer.displayName })) ?? [];
+      const firstOffer = detail.offers?.[0];
+      setSiteOffers(offers);
+      setSelectedOfferRows([]);
+      setSiteFormValues({
         ...defaultSiteValues,
         ...detail,
-        offers: detail.offers?.map((offer) => ({ ...offer, displayName: offer.displayName }))
+        rechargeRatio: firstOffer?.rechargeRatio ?? 1,
+        bonusRatio: firstOffer?.bonusRatio ?? 0
       });
+      setPricingRechargeRatio(firstOffer?.rechargeRatio ?? 1);
+      setPricingBonusRatio(firstOffer?.bonusRatio ?? 0);
       setFormOpen(true);
     } catch (requestError) {
       message.error((requestError as Error).message);
@@ -225,7 +278,20 @@ export default function SitesPage() {
   function closeFormModal() {
     setFormOpen(false);
     setEditing(null);
+    setOfferModalOpen(false);
+    setEditingOfferIndex(null);
+    setSelectedOfferRows([]);
+    setSiteOffers([]);
   }
+
+  useEffect(() => {
+    if (!formOpen) {
+      return;
+    }
+
+    form.resetFields();
+    form.setFieldsValue(siteFormValues);
+  }, [form, formOpen, siteFormValues]);
 
   async function submit(values: SiteFormValues) {
     setFormSubmitting(true);
@@ -243,7 +309,7 @@ export default function SitesPage() {
         supportsRefund: Boolean(values.supportsRefund),
         supportsInvoice: Boolean(values.supportsInvoice),
         hasDocs: Boolean(values.hasDocs),
-        offers: normalizeOffers(values.offers)
+        offers: normalizeOffers(siteOffers, models, toNumber(values.rechargeRatio) ?? 1, toNumber(values.bonusRatio) ?? 0)
       };
 
       if (editing) {
@@ -270,6 +336,37 @@ export default function SitesPage() {
     await load();
   }
 
+  async function deleteSingleSite(record: RelaySiteListItem) {
+    await deleteSite(record.id);
+    message.success("站点已删除");
+    setSelectedSiteIds((current) => current.filter((id) => id !== record.id));
+    await load();
+  }
+
+  async function batchUpdateSites(status: string) {
+    const ids = selectedSiteIds.map(Number);
+    if (!ids.length) {
+      return;
+    }
+
+    await Promise.all(ids.map((id) => updateSiteStatus(id, status)));
+    message.success(`已更新 ${ids.length} 个站点`);
+    setSelectedSiteIds([]);
+    await load();
+  }
+
+  async function batchDeleteSites() {
+    const ids = selectedSiteIds.map(Number);
+    if (!ids.length) {
+      return;
+    }
+
+    await Promise.all(ids.map((id) => deleteSite(id)));
+    message.success(`已删除 ${ids.length} 个站点`);
+    setSelectedSiteIds([]);
+    await load();
+  }
+
   async function importModelsFromEndpoint() {
     const baseUrl = form.getFieldValue("baseUrl");
     if (!baseUrl) {
@@ -284,25 +381,18 @@ export default function SitesPage() {
         vendor: importVendor,
         apiKey: importApiKey || undefined
       });
-      const current = form.getFieldValue("offers") ?? [];
-      form.setFieldValue("offers", [
-        ...current,
-        ...rows.map((row) => ({
+      setSiteOffers(rows.map((row) => ({
           vendor: row.vendor || importVendor,
           officialModelId: row.officialModelId,
           requestName: row.requestName,
           apiType: row.apiType,
           displayName: row.displayName,
-          officialInputPriceUsd: row.officialInputPriceUsd,
-          officialOutputPriceUsd: row.officialOutputPriceUsd,
           siteInputPriceUsd: row.officialInputPriceUsd,
           siteOutputPriceUsd: row.officialOutputPriceUsd,
-          rechargeRatio: 1,
-          bonusRatio: 0,
           sourceType: "manual",
           status: "active"
-        }))
-      ]);
+        })));
+      setSelectedOfferRows([]);
       message.success(`已抓取 ${rows.length} 个模型`);
     } catch (requestError) {
       message.error((requestError as Error).message);
@@ -345,12 +435,8 @@ export default function SitesPage() {
       requestName: model?.requestName || row.requestName,
       apiType: model?.apiType || "openai",
       displayName: model?.displayName || row.displayName,
-      officialInputPriceUsd: model?.officialInputPriceUsd,
-      officialOutputPriceUsd: model?.officialOutputPriceUsd,
       siteInputPriceUsd: isPerCall ? row.sitePerCallPriceUsd : row.siteInputPriceUsd,
       siteOutputPriceUsd: isPerCall ? undefined : row.siteOutputPriceUsd,
-      rechargeRatio: row.rechargeRatio,
-      bonusRatio: row.bonusRatio,
       sourceType: "crawl",
       status: "active"
     };
@@ -369,16 +455,13 @@ export default function SitesPage() {
         baseUrl,
         providerType: pricingProviderType,
         apiKey: importApiKey || undefined,
-        rechargeRatio: pricingRechargeRatio,
-        bonusRatio: pricingBonusRatio,
+        rechargeRatio: toNumber(form.getFieldValue("rechargeRatio")) ?? pricingRechargeRatio,
+        bonusRatio: toNumber(form.getFieldValue("bonusRatio")) ?? pricingBonusRatio,
         rateBaseline: pricingRateBaseline,
         groupId: pricingGroupId || undefined
       });
-      const current = form.getFieldValue("offers") ?? [];
-      form.setFieldValue("offers", [
-        ...current,
-        ...rows.map(mapPricingRowToOffer)
-      ]);
+      setSiteOffers(rows.map(mapPricingRowToOffer));
+      setSelectedOfferRows([]);
       message.success(`已抓取 ${rows.length} 个模型价格`);
     } catch (requestError) {
       message.error((requestError as Error).message);
@@ -387,21 +470,78 @@ export default function SitesPage() {
     }
   }
 
-  function applyModelToOffer(rowIndex: number, modelId: number) {
+  function applyModelToOfferForm(modelId: number) {
     const model = models.find((item) => item.id === modelId);
     if (!model) {
       return;
     }
 
-    form.setFieldValue(["offers", rowIndex, "modelId"], model.id);
-    form.setFieldValue(["offers", rowIndex, "modelSlug"], model.slug);
-    form.setFieldValue(["offers", rowIndex, "vendor"], model.vendor);
-    form.setFieldValue(["offers", rowIndex, "officialModelId"], model.officialModelId);
-    form.setFieldValue(["offers", rowIndex, "requestName"], model.requestName);
-    form.setFieldValue(["offers", rowIndex, "apiType"], model.apiType);
-    form.setFieldValue(["offers", rowIndex, "displayName"], model.displayName);
-    form.setFieldValue(["offers", rowIndex, "officialInputPriceUsd"], model.officialInputPriceUsd);
-    form.setFieldValue(["offers", rowIndex, "officialOutputPriceUsd"], model.officialOutputPriceUsd);
+    offerForm.setFieldsValue({
+      modelId: model.id,
+      modelSlug: model.slug,
+      vendor: model.vendor,
+      officialModelId: model.officialModelId,
+      requestName: model.requestName,
+      apiType: model.apiType,
+      displayName: model.displayName
+    });
+  }
+
+  function openCreateOfferModal() {
+    setEditingOfferIndex(null);
+    offerForm.resetFields();
+    offerForm.setFieldsValue({
+      vendor: importVendor,
+      sourceType: "manual",
+      status: "active"
+    });
+    setOfferModalOpen(true);
+  }
+
+  function openEditOfferModal(index: number) {
+    setEditingOfferIndex(index);
+    offerForm.resetFields();
+    offerForm.setFieldsValue(siteOffers[index]);
+    setOfferModalOpen(true);
+  }
+
+  function removeOffer(index: number) {
+    setSiteOffers((current) => current.filter((_, offerIndex) => offerIndex !== index));
+    setSelectedOfferRows((current) => current.filter((rowIndex) => rowIndex !== index));
+  }
+
+  function batchUpdateOffers(status: string) {
+    const selectedIndexes = new Set(selectedOfferRows.map(Number));
+    setSiteOffers((current) => current.map((offer, index) => selectedIndexes.has(index) ? { ...offer, status } : offer));
+    setSelectedOfferRows([]);
+  }
+
+  function batchRemoveOffers() {
+    const selectedIndexes = new Set(selectedOfferRows.map(Number));
+    setSiteOffers((current) => current.filter((_, index) => !selectedIndexes.has(index)));
+    setSelectedOfferRows([]);
+  }
+
+  async function saveOffer() {
+    const values = await offerForm.validateFields();
+    const nextOffer: RelaySiteOffer = {
+      ...values,
+      vendor: values.vendor || importVendor,
+      requestName: values.requestName || values.displayName,
+      officialModelId: values.officialModelId || values.requestName || values.displayName,
+      apiType: values.apiType || "openai",
+      sourceType: values.sourceType || "manual",
+      status: values.status || "active"
+    };
+
+    if (editingOfferIndex === null) {
+      setSiteOffers((current) => [...current, nextOffer]);
+    } else {
+      setSiteOffers((current) => current.map((offer, index) => index === editingOfferIndex ? nextOffer : offer));
+    }
+
+    setOfferModalOpen(false);
+    setEditingOfferIndex(null);
   }
 
   useEffect(() => {
@@ -445,10 +585,20 @@ export default function SitesPage() {
                 { label: "全部状态", value: "all" },
                 { label: "启用", value: "active" },
                 { label: "暂停", value: "suspended" },
-                { label: "草稿", value: "draft" },
-                { label: "归档", value: "archived" }
+                { label: "草稿", value: "draft" }
               ]}
             />
+            <Button disabled={!selectedSiteIds.length} onClick={() => batchUpdateSites("active")}>
+              批量启用
+            </Button>
+            <Button disabled={!selectedSiteIds.length} onClick={() => batchUpdateSites("suspended")}>
+              批量暂停
+            </Button>
+            <Popconfirm title={`确认删除选中的 ${selectedSiteIds.length} 个站点？`} onConfirm={batchDeleteSites}>
+              <Button danger disabled={!selectedSiteIds.length}>
+                批量删除
+              </Button>
+            </Popconfirm>
           </Space>
 
           {error ? <Alert type="warning" showIcon message={`站点接口暂不可用：${error}`} style={{ marginBottom: 16 }} /> : null}
@@ -459,6 +609,10 @@ export default function SitesPage() {
             rowKey="id"
             dataSource={filteredItems}
             pagination={{ pageSize: 12 }}
+            rowSelection={{
+              selectedRowKeys: selectedSiteIds,
+              onChange: setSelectedSiteIds
+            }}
             columns={[
               {
                 title: "站点",
@@ -510,9 +664,9 @@ export default function SitesPage() {
                     >
                       <Button type="link">{record.status === "active" ? "暂停" : "启用"}</Button>
                     </Popconfirm>
-                    <Popconfirm title="确认归档该站点？" onConfirm={() => changeStatus(record, "archived")}>
+                    <Popconfirm title="确认删除该站点？删除后列表不再显示。" onConfirm={() => deleteSingleSite(record)}>
                       <Button type="link" danger>
-                        归档
+                        删除
                       </Button>
                     </Popconfirm>
                   </Space>
@@ -526,7 +680,7 @@ export default function SitesPage() {
           <Modal
             open
             title={editing ? "编辑站点" : "新增站点"}
-            width={960}
+            width={1280}
             maskClosable={false}
             onCancel={closeFormModal}
             cancelText="取消"
@@ -536,6 +690,13 @@ export default function SitesPage() {
           >
             <ProCard loading={formLoading} bordered={false}>
               <ProForm<SiteFormValues> form={form} submitter={false} onFinish={submit}>
+                <Tabs
+                  items={[
+                    {
+                      key: "basic",
+                      label: "编辑基本信息",
+                      children: (
+                        <>
               <ProFormText name="name" label="站点名称" rules={[{ required: true, message: "请输入站点名称" }]} />
               <ProFormText name="slug" label="Slug" />
               <ProFormText name="baseUrl" label="Base URL" rules={[{ required: true, message: "请输入 Base URL" }]} />
@@ -545,12 +706,39 @@ export default function SitesPage() {
               <ProFormText name="inviteUrl" label="邀请链接" />
               <ProFormTextArea name="recentReview" label="近期体验" fieldProps={{ rows: 3 }} />
               <Space wrap>
+                <ProFormText
+                  name="rechargeRatio"
+                  label="充值倍率"
+                  fieldProps={{
+                    type: "number",
+                    step: "0.01",
+                    onChange: (event) => setPricingRechargeRatio(toNumber(event.target.value) ?? 1)
+                  }}
+                  rules={[{ required: true, message: "请输入充值倍率" }]}
+                />
+                <ProFormText
+                  name="bonusRatio"
+                  label="赠送倍率"
+                  fieldProps={{
+                    type: "number",
+                    step: "0.01",
+                    onChange: (event) => setPricingBonusRatio(toNumber(event.target.value) ?? 0)
+                  }}
+                />
+              </Space>
+              <Space wrap>
                 <ProFormSwitch name="supportsRefund" label="支持退款" />
                 <ProFormSwitch name="supportsInvoice" label="支持发票" />
                 <ProFormSwitch name="hasDocs" label="提供文档" />
               </Space>
-
-              <Divider orientation="left">模型与价格</Divider>
+                        </>
+                      )
+                    },
+                    {
+                      key: "models",
+                      label: "编辑模型",
+                      children: (
+                        <>
               <Space wrap style={{ marginBottom: 16 }}>
                 <Input value={importVendor} onChange={(event) => setImportVendor(event.target.value)} placeholder="抓取厂商名" style={{ width: 160 }} />
                 <Input.Password value={importApiKey} onChange={(event) => setImportApiKey(event.target.value)} placeholder="API Key，不保存" style={{ width: 260 }} />
@@ -580,22 +768,6 @@ export default function SitesPage() {
                   style={{ width: 190 }}
                 />
                 <Input
-                  type="number"
-                  step="0.01"
-                  value={pricingRechargeRatio}
-                  onChange={(event) => setPricingRechargeRatio(toNumber(event.target.value) ?? 1)}
-                  placeholder="充值倍率"
-                  style={{ width: 170 }}
-                />
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={pricingBonusRatio}
-                  onChange={(event) => setPricingBonusRatio(toNumber(event.target.value) ?? 0)}
-                  placeholder="赠送倍率"
-                  style={{ width: 170 }}
-                />
-                <Input
                   value={pricingGroupId}
                   onChange={(event) => setPricingGroupId(event.target.value)}
                   placeholder="用户组，可留空取最低价"
@@ -606,80 +778,178 @@ export default function SitesPage() {
                 </Button>
               </Space>
 
-              <Form.List name="offers">
-                {(fields, { add, remove }) => (
-                  <Space direction="vertical" size={12} style={{ width: "100%" }}>
-                    {fields.map((field) => (
-                      <ProCard key={field.key} bordered size="small">
-                        <Space direction="vertical" size={12} style={{ width: "100%" }}>
-                          <Space wrap align="start">
-                            <Form.Item label="选择已有模型" name={[field.name, "modelId"]} style={{ width: 260 }}>
-                              <Select
-                                allowClear
-                                showSearch
-                                optionFilterProp="label"
-                                options={modelOptions}
-                                onChange={(value) => value && applyModelToOffer(field.name, value)}
-                              />
-                            </Form.Item>
-                            <Form.Item label="展示名称" name={[field.name, "displayName"]} rules={[{ required: true, message: "请输入模型名称" }]} style={{ width: 200 }}>
-                              <Input />
-                            </Form.Item>
-                            <Form.Item label="Vendor" name={[field.name, "vendor"]} style={{ width: 140 }}>
-                              <Input />
-                            </Form.Item>
-                            <Form.Item label="Official ID" name={[field.name, "officialModelId"]} rules={[{ required: true, message: "请输入 Official ID" }]} style={{ width: 200 }}>
-                              <Input />
-                            </Form.Item>
-                            <Form.Item label="请求名称" name={[field.name, "requestName"]} rules={[{ required: true, message: "请输入模型请求名称" }]} style={{ width: 200 }}>
-                              <Input />
-                            </Form.Item>
-                            <Form.Item label="接口类型" name={[field.name, "apiType"]} style={{ width: 130 }}>
-                              <Select
-                                options={[
-                                  { label: "OpenAI", value: "openai" },
-                                  { label: "Anthropic", value: "anthropic" }
-                                ]}
-                              />
-                            </Form.Item>
-                          </Space>
-                          <Space wrap align="start">
-                            <Form.Item label="官方输入价" name={[field.name, "officialInputPriceUsd"]} style={{ width: 140 }}>
-                              <Input type="number" step="0.000001" />
-                            </Form.Item>
-                            <Form.Item label="官方输出价" name={[field.name, "officialOutputPriceUsd"]} style={{ width: 140 }}>
-                              <Input type="number" step="0.000001" />
-                            </Form.Item>
-                            <Form.Item label="站点输入价" name={[field.name, "siteInputPriceUsd"]} style={{ width: 140 }}>
-                              <Input type="number" step="0.000001" />
-                            </Form.Item>
-                            <Form.Item label="站点输出价" name={[field.name, "siteOutputPriceUsd"]} style={{ width: 140 }}>
-                              <Input type="number" step="0.000001" />
-                            </Form.Item>
-                            <Form.Item label="充值倍率" name={[field.name, "rechargeRatio"]} style={{ width: 120 }}>
-                              <Input type="number" step="0.01" />
-                            </Form.Item>
-                            <Form.Item label="赠送倍率" name={[field.name, "bonusRatio"]} style={{ width: 120 }}>
-                              <Input type="number" step="0.01" />
-                            </Form.Item>
-                            <Form.Item label="状态" name={[field.name, "status"]} style={{ width: 120 }}>
-                              <Select options={offerStatusOptions} />
-                            </Form.Item>
-                            <Button danger onClick={() => remove(field.name)}>
-                              删除
+              <Form.Item shouldUpdate noStyle>
+                {() => {
+                  const offers = siteOffers;
+                  const rows: OfferTableRow[] = offers
+                    .map((offer, rowIndex) => ({ ...offer, rowIndex }))
+                    .filter((offer) => {
+                      const status = offer.status || "active";
+                      return status !== "archived" && (offerStatusFilter === "all" || status === offerStatusFilter);
+                    });
+
+                  return (
+                    <Space direction="vertical" size={12} style={{ width: "100%" }}>
+                      <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                        <Space wrap>
+                          <Tag color="blue">当前显示 {rows.length} 个模型</Tag>
+                          <Select
+                            value={offerStatusFilter}
+                            options={offerStatusFilterOptions}
+                            style={{ width: 130 }}
+                            onChange={setOfferStatusFilter}
+                          />
+                          <Button disabled={!selectedOfferRows.length} onClick={() => batchUpdateOffers("active")}>
+                            批量启用
+                          </Button>
+                          <Button disabled={!selectedOfferRows.length} onClick={() => batchUpdateOffers("hidden")}>
+                            批量隐藏
+                          </Button>
+                          <Popconfirm title={`确认删除选中的 ${selectedOfferRows.length} 个模型？`} onConfirm={batchRemoveOffers}>
+                            <Button danger disabled={!selectedOfferRows.length}>
+                              批量删除
                             </Button>
-                          </Space>
+                          </Popconfirm>
                         </Space>
-                      </ProCard>
-                    ))}
-                    <Button icon={<PlusOutlined />} onClick={() => add({ rechargeRatio: 1, bonusRatio: 0, sourceType: "manual", status: "active", vendor: importVendor })}>
-                      手工新增模型价格
-                    </Button>
-                  </Space>
-                )}
-              </Form.List>
+                        <Button icon={<PlusOutlined />} type="primary" onClick={openCreateOfferModal}>
+                          新增模型价格
+                        </Button>
+                      </Space>
+                      <Table<OfferTableRow>
+                        rowKey="rowIndex"
+                        dataSource={rows}
+                        pagination={{ pageSize: 12, showSizeChanger: false }}
+                        scroll={{ x: 980, y: 460 }}
+                        rowSelection={{
+                          selectedRowKeys: selectedOfferRows,
+                          onChange: setSelectedOfferRows
+                        }}
+                        columns={[
+                          {
+                            title: "模型名称",
+                            dataIndex: "displayName",
+                            render: (_, record) => (
+                              <div>
+                                <strong>{record.displayName || record.requestName || record.officialModelId || "-"}</strong>
+                                <div style={{ color: "var(--cheapai-admin-muted)", fontSize: 12 }}>{record.requestName || record.officialModelId || record.modelSlug || "-"}</div>
+                              </div>
+                            )
+                          },
+                          {
+                            title: "输入价格",
+                            dataIndex: "siteInputPriceUsd",
+                            width: 130,
+                            render: (value?: number) => value ?? "-"
+                          },
+                          {
+                            title: "输出价格",
+                            dataIndex: "siteOutputPriceUsd",
+                            width: 130,
+                            render: (value?: number) => value ?? "-"
+                          },
+                          {
+                            title: "渠道",
+                            dataIndex: "sourceType",
+                            width: 110,
+                            render: (value?: string) => value === "crawl" ? "抓取" : "手动"
+                          },
+                          {
+                            title: "状态",
+                            dataIndex: "status",
+                            width: 110,
+                            render: (status?: string) => <Tag color={statusColors[status ?? ""] ?? "default"}>{offerStatusOptions.find((item) => item.value === status)?.label ?? status ?? "-"}</Tag>
+                          },
+                          {
+                            title: "操作",
+                            width: 150,
+                            render: (_, record) => (
+                              <Space>
+                                <Button type="link" onClick={() => openEditOfferModal(record.rowIndex)}>
+                                  编辑
+                                </Button>
+                                <Button type="link" danger onClick={() => removeOffer(record.rowIndex)}>
+                                  删除
+                                </Button>
+                              </Space>
+                            )
+                          }
+                        ]}
+                      />
+                    </Space>
+                  );
+                }}
+              </Form.Item>
+                        </>
+                      )
+                    }
+                  ]}
+                />
               </ProForm>
             </ProCard>
+            <Modal
+              open={offerModalOpen}
+              title={editingOfferIndex === null ? "新增模型价格" : "编辑模型价格"}
+              width={720}
+              maskClosable={false}
+              onCancel={() => {
+                setOfferModalOpen(false);
+                setEditingOfferIndex(null);
+              }}
+              onOk={saveOffer}
+              cancelText="取消"
+              okText="保存"
+            >
+              <Form<RelaySiteOffer> form={offerForm} layout="vertical">
+                <Form.Item name="modelId" label="模型名称">
+                  <Select
+                    allowClear
+                    showSearch
+                    optionFilterProp="label"
+                    options={modelOptions}
+                    placeholder="选择已有模型"
+                    onChange={(value) => value && applyModelToOfferForm(value)}
+                  />
+                </Form.Item>
+                <Form.Item name="displayName" label="显示名称" rules={[{ required: true, message: "请输入模型名称" }]}>
+                  <Input />
+                </Form.Item>
+                <OfficialPriceHint form={offerForm} models={models} />
+                <Space wrap style={{ width: "100%" }}>
+                  <Form.Item name="siteInputPriceUsd" label="输入价格" style={{ width: 200 }}>
+                    <Input type="number" step="0.000001" />
+                  </Form.Item>
+                  <Form.Item name="siteOutputPriceUsd" label="输出价格" style={{ width: 200 }}>
+                    <Input type="number" step="0.000001" />
+                  </Form.Item>
+                  <Form.Item name="sourceType" label="渠道" style={{ width: 120 }}>
+                    <Select
+                      options={[
+                        { label: "手动", value: "manual" },
+                        { label: "抓取", value: "crawl" }
+                      ]}
+                    />
+                  </Form.Item>
+                  <Form.Item name="status" label="状态" style={{ width: 120 }}>
+                    <Select options={offerStatusOptions} />
+                  </Form.Item>
+                </Space>
+                <Form.Item name="modelSlug" hidden>
+                  <Input />
+                </Form.Item>
+                <Form.Item name="vendor" hidden>
+                  <Input />
+                </Form.Item>
+                <Form.Item name="officialModelId" hidden>
+                  <Input />
+                </Form.Item>
+                <Form.Item name="requestName" hidden>
+                  <Input />
+                </Form.Item>
+                <Form.Item name="apiType" hidden>
+                  <Input />
+                </Form.Item>
+              </Form>
+            </Modal>
           </Modal>
         ) : null}
 

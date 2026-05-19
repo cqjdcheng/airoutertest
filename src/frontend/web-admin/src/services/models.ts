@@ -91,6 +91,10 @@ export async function updateModelStatus(id: number, status: string) {
   });
 }
 
+export async function deleteModel(id: number) {
+  return apiRequest<void>(`/api/v1/admin/models/${id}`, { method: "DELETE" });
+}
+
 export async function updateModelMetadata(id: number, payload: {
   isHot: boolean;
   sortOrder: number;

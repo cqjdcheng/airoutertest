@@ -14,6 +14,7 @@ import AuthGuard from "@/components/AuthGuard";
 import AdminPage from "@/components/AdminPage";
 import {
   createModel,
+  deleteModel,
   fetchModel,
   fetchModels,
   importModels,
@@ -91,6 +92,7 @@ export default function ModelsPage() {
   const [importLoading, setImportLoading] = useState(false);
   const [importRows, setImportRows] = useState<ModelImportPreviewItem[]>([]);
   const [selectedImportIds, setSelectedImportIds] = useState<Key[]>([]);
+  const [selectedModelIds, setSelectedModelIds] = useState<Key[]>([]);
   const [editing, setEditing] = useState<ModelListItem | null>(null);
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -211,6 +213,37 @@ export default function ModelsPage() {
     await load();
   }
 
+  async function deleteSingleModel(record: ModelListItem) {
+    await deleteModel(record.id);
+    message.success("模型已删除");
+    setSelectedModelIds((current) => current.filter((id) => id !== record.id));
+    await load();
+  }
+
+  async function batchUpdateModels(status: string) {
+    const ids = selectedModelIds.map(Number);
+    if (!ids.length) {
+      return;
+    }
+
+    await Promise.all(ids.map((id) => updateModelStatus(id, status)));
+    message.success(`已更新 ${ids.length} 个模型`);
+    setSelectedModelIds([]);
+    await load();
+  }
+
+  async function batchDeleteModels() {
+    const ids = selectedModelIds.map(Number);
+    if (!ids.length) {
+      return;
+    }
+
+    await Promise.all(ids.map((id) => deleteModel(id)));
+    message.success(`已删除 ${ids.length} 个模型`);
+    setSelectedModelIds([]);
+    await load();
+  }
+
   async function saveMetadata(record: ModelListItem, patch: Partial<Pick<ModelListItem, "isHot" | "sortOrder">>) {
     const next = {
       isHot: patch.isHot ?? record.isHot,
@@ -328,6 +361,17 @@ export default function ModelsPage() {
                 { label: "弃用", value: "deprecated" }
               ]}
             />
+            <Button disabled={!selectedModelIds.length} onClick={() => batchUpdateModels("active")}>
+              批量启用
+            </Button>
+            <Button disabled={!selectedModelIds.length} onClick={() => batchUpdateModels("hidden")}>
+              批量隐藏
+            </Button>
+            <Popconfirm title={`确认删除选中的 ${selectedModelIds.length} 个模型？`} onConfirm={batchDeleteModels}>
+              <Button danger disabled={!selectedModelIds.length}>
+                批量删除
+              </Button>
+            </Popconfirm>
           </Space>
 
           {error ? <Alert type="warning" showIcon message={`模型接口暂不可用：${error}`} style={{ marginBottom: 16 }} /> : null}
@@ -338,6 +382,10 @@ export default function ModelsPage() {
             rowKey="id"
             dataSource={filteredItems}
             pagination={{ pageSize: 12 }}
+            rowSelection={{
+              selectedRowKeys: selectedModelIds,
+              onChange: setSelectedModelIds
+            }}
             columns={[
               {
                 title: "模型",
@@ -419,9 +467,9 @@ export default function ModelsPage() {
                     >
                       <Button type="link">{record.status === "active" ? "隐藏" : "启用"}</Button>
                     </Popconfirm>
-                    <Popconfirm title="确认标记为弃用？" onConfirm={() => changeStatus(record, "deprecated")}>
+                    <Popconfirm title="确认删除该模型？删除后列表不再显示。" onConfirm={() => deleteSingleModel(record)}>
                       <Button type="link" danger>
-                        弃用
+                        删除
                       </Button>
                     </Popconfirm>
                   </Space>

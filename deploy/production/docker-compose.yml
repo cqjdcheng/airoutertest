@@ -1,0 +1,102 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: cheapai-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: cheapai
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: cheapai-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+
+  api:
+    build:
+      context: ./source
+      dockerfile: deploy/production/Dockerfile.api
+    container_name: cheapai-api
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      CheapAi__MySql__ConnectionString: Server=mysql;Port=3306;Database=cheapai;Uid=root;Pwd=${MYSQL_ROOT_PASSWORD};AllowPublicKeyRetrieval=True;SslMode=None;
+      CheapAi__Redis__ConnectionString: redis:6379
+      CheapAi__Jwt__SigningKey: ${CHEAPAI_JWT_SIGNING_KEY}
+      CheapAi__BootstrapAdmin__Enabled: "true"
+      CheapAi__BootstrapAdmin__Username: admin
+      CheapAi__BootstrapAdmin__Password: ${CHEAPAI_BOOTSTRAP_ADMIN_PASSWORD}
+      CheapAi__BootstrapAdmin__DisplayName: 系统管理员
+    ports:
+      - "127.0.0.1:18080:8080"
+
+  jobs:
+    build:
+      context: ./source
+      dockerfile: deploy/production/Dockerfile.jobs
+    container_name: cheapai-jobs
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      DOTNET_ENVIRONMENT: Production
+      CheapAi__MySql__ConnectionString: Server=mysql;Port=3306;Database=cheapai;Uid=root;Pwd=${MYSQL_ROOT_PASSWORD};AllowPublicKeyRetrieval=True;SslMode=None;
+      CheapAi__Redis__ConnectionString: redis:6379
+      CheapAi__Jwt__SigningKey: ${CHEAPAI_JWT_SIGNING_KEY}
+
+  public-web:
+    build:
+      context: ./source
+      dockerfile: deploy/production/Dockerfile.public
+      args:
+        API_BASE_URL: http://api:8080
+        NEXT_PUBLIC_API_BASE_URL: ""
+    container_name: cheapai-public-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      API_BASE_URL: http://api:8080
+      NEXT_PUBLIC_API_BASE_URL: ""
+    ports:
+      - "127.0.0.1:13000:3000"
+
+  admin-web:
+    build:
+      context: ./source
+      dockerfile: deploy/production/Dockerfile.admin
+      args:
+        UMI_APP_API_BASE_URL: ""
+    container_name: cheapai-admin-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "127.0.0.1:18081:80"
+
+volumes:
+  mysql-data:
+  redis-data:

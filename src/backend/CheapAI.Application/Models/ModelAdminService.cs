@@ -185,6 +185,17 @@ public sealed class ModelAdminService(
         await modelRepository.UpdateStatusAsync(id, request.Status, cancellationToken);
     }
 
+    public async Task DeleteAsync(ulong id, CancellationToken cancellationToken = default)
+    {
+        var existing = await modelRepository.GetByIdAsync(id, cancellationToken);
+        if (existing is null)
+        {
+            throw new AppNotFoundException("模型不存在");
+        }
+
+        await modelRepository.DeleteAsync(id, cancellationToken);
+    }
+
     public async Task UpdateMetadataAsync(ulong id, UpdateModelMetadataRequest request, CancellationToken cancellationToken = default)
     {
         var existing = await modelRepository.GetByIdAsync(id, cancellationToken);

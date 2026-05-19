@@ -51,4 +51,11 @@ public sealed class AdminModelProvidersController(ModelProviderAdminService mode
         await modelProviderAdminService.UpdateStatusAsync(id, request, cancellationToken);
         return Ok(ApiResponseFactory.Success(HttpContext));
     }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(ulong id, CancellationToken cancellationToken)
+    {
+        await modelProviderAdminService.DeleteAsync(id, cancellationToken);
+        return Ok(ApiResponseFactory.Success(HttpContext));
+    }
 }

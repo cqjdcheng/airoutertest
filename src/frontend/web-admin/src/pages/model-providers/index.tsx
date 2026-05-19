@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type Key } from "react";
 import { DrawerForm, ProCard, ProFormDigit, ProFormSelect, ProFormText, ProFormTextArea } from "@ant-design/pro-components";
 import { Alert, Button, Form, Input, Popconfirm, Select, Space, Table, Tag, message } from "antd";
 import AdminPage from "@/components/AdminPage";
@@ -6,6 +6,7 @@ import AuthGuard from "@/components/AuthGuard";
 import { getAccessToken } from "@/services/api";
 import {
   createModelProvider,
+  deleteModelProvider,
   fetchModelProviders,
   updateModelProvider,
   updateModelProviderStatus,
@@ -53,6 +54,7 @@ export default function ModelProvidersPage() {
   const [editing, setEditing] = useState<ModelProviderListItem | null>(null);
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [selectedProviderIds, setSelectedProviderIds] = useState<Key[]>([]);
   const [form] = Form.useForm<ProviderFormValues>();
 
   const filteredItems = useMemo(() => {
@@ -133,6 +135,37 @@ export default function ModelProvidersPage() {
     await load();
   }
 
+  async function deleteSingleProvider(record: ModelProviderListItem) {
+    await deleteModelProvider(record.id);
+    message.success("提供商已删除");
+    setSelectedProviderIds((current) => current.filter((id) => id !== record.id));
+    await load();
+  }
+
+  async function batchUpdateProviders(status: string) {
+    const ids = selectedProviderIds.map(Number);
+    if (!ids.length) {
+      return;
+    }
+
+    await Promise.all(ids.map((id) => updateModelProviderStatus(id, status)));
+    message.success(`已更新 ${ids.length} 个提供商`);
+    setSelectedProviderIds([]);
+    await load();
+  }
+
+  async function batchDeleteProviders() {
+    const ids = selectedProviderIds.map(Number);
+    if (!ids.length) {
+      return;
+    }
+
+    await Promise.all(ids.map((id) => deleteModelProvider(id)));
+    message.success(`已删除 ${ids.length} 个提供商`);
+    setSelectedProviderIds([]);
+    await load();
+  }
+
   useEffect(() => {
     void load();
   }, []);
@@ -175,6 +208,17 @@ export default function ModelProvidersPage() {
                 { label: "隐藏", value: "hidden" }
               ]}
             />
+            <Button disabled={!selectedProviderIds.length} onClick={() => batchUpdateProviders("active")}>
+              批量启用
+            </Button>
+            <Button disabled={!selectedProviderIds.length} onClick={() => batchUpdateProviders("hidden")}>
+              批量隐藏
+            </Button>
+            <Popconfirm title={`确认删除选中的 ${selectedProviderIds.length} 个提供商？`} onConfirm={batchDeleteProviders}>
+              <Button danger disabled={!selectedProviderIds.length}>
+                批量删除
+              </Button>
+            </Popconfirm>
           </Space>
 
           {error ? <Alert type="warning" showIcon message={`提供商接口暂不可用：${error}`} style={{ marginBottom: 16 }} /> : null}
@@ -185,6 +229,10 @@ export default function ModelProvidersPage() {
             rowKey="id"
             dataSource={filteredItems}
             pagination={{ pageSize: 12 }}
+            rowSelection={{
+              selectedRowKeys: selectedProviderIds,
+              onChange: setSelectedProviderIds
+            }}
             columns={[
               {
                 title: "提供商",
@@ -217,6 +265,11 @@ export default function ModelProvidersPage() {
                       onConfirm={() => changeStatus(record)}
                     >
                       <Button type="link">{record.status === "active" ? "隐藏" : "启用"}</Button>
+                    </Popconfirm>
+                    <Popconfirm title="确认删除该提供商？删除后列表不再显示。" onConfirm={() => deleteSingleProvider(record)}>
+                      <Button type="link" danger>
+                        删除
+                      </Button>
                     </Popconfirm>
                   </Space>
                 )

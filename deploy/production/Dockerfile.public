@@ -1,0 +1,23 @@
+FROM node:22-alpine AS build
+WORKDIR /app/src/frontend/web-public
+RUN npm install -g pnpm@10.18.3
+
+COPY src/frontend/web-public/package.json src/frontend/web-public/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
+COPY src/frontend/web-public ./
+ARG API_BASE_URL=http://api:8080
+ARG NEXT_PUBLIC_API_BASE_URL=
+ENV API_BASE_URL=$API_BASE_URL
+ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
+RUN rm -f .env.local
+RUN pnpm build
+
+FROM node:22-alpine AS runtime
+WORKDIR /app/src/frontend/web-public
+ENV NODE_ENV=production
+ENV PORT=3000
+RUN npm install -g pnpm@10.18.3
+COPY --from=build /app/src/frontend/web-public ./
+EXPOSE 3000
+CMD ["pnpm", "start", "-p", "3000", "-H", "0.0.0.0"]
