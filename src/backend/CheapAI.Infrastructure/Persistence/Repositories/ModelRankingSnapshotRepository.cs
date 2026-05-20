@@ -50,6 +50,29 @@ public sealed class ModelRankingSnapshotRepository(ISqlSugarClient db, IRelaySit
         var rankingType = string.IsNullOrWhiteSpace(query.RankingType) ? "price" : query.RankingType;
         var window = string.IsNullOrWhiteSpace(query.Window) ? "7d" : query.Window;
 
+        if (rankingType.Equals("price", StringComparison.OrdinalIgnoreCase))
+        {
+            var offerRanking = await QueryOfferRankingRowsAsync(model.Id, query, cancellationToken);
+            return new ModelRankingResponse
+            {
+                Model = new RankingModelSummary
+                {
+                    Slug = model.Slug,
+                    DisplayName = model.DisplayName
+                },
+                RankingType = rankingType,
+                Window = window,
+                SnapshotAt = offerRanking.SnapshotAt,
+                Result = new PagedResult<ModelRankingItemResponse>
+                {
+                    Items = offerRanking.Items.Select(MapRankingItem).ToList(),
+                    Page = query.Page,
+                    PageSize = query.PageSize,
+                    Total = offerRanking.Total
+                }
+            };
+        }
+
         var sqlQuery = db.Queryable<ModelRankingSnapshotEntity, RelaySiteEntity>(
                 (snapshot, site) => snapshot.SiteId == site.Id)
             .Where((snapshot, site) =>
@@ -103,31 +126,7 @@ public sealed class ModelRankingSnapshotRepository(ISqlSugarClient db, IRelaySit
             })
             .ToPageListAsync(query.Page, query.PageSize, total, cancellationToken);
 
-        DateTime? fallbackSnapshotAt = null;
-        if (rawItems.Count == 0 && rankingType.Equals("price", StringComparison.OrdinalIgnoreCase))
-        {
-            var fallback = await QueryOfferRankingRowsAsync(model.Id, query, cancellationToken);
-            rawItems = fallback.Items;
-            total = fallback.Total;
-            fallbackSnapshotAt = fallback.SnapshotAt;
-        }
-
-        var items = rawItems.Select(item => new ModelRankingItemResponse
-        {
-            SiteSlug = item.SiteSlug,
-            SiteName = item.SiteName,
-            EffectiveInputPriceUsd = item.EffectiveInputPriceUsd,
-            EffectiveOutputPriceUsd = item.EffectiveOutputPriceUsd,
-            Availability24h = item.Availability24h,
-            Stability7d = item.Stability7d,
-            FirstTokenMs = item.SpeedScore.HasValue ? (int?)Math.Round(item.SpeedScore.Value) : null,
-            FullResponseMs = item.SpeedScore.HasValue ? (int?)Math.Round(item.SpeedScore.Value) : null,
-            RiskScore = item.RiskScore,
-            RiskLevel = ResolveRiskLevel(item.RiskScore),
-            SupportsInvoice = item.SupportsInvoice,
-            SupportsRefund = item.SupportsRefund,
-            HasDocs = item.HasDocs
-        }).ToList();
+        var items = rawItems.Select(MapRankingItem).ToList();
 
         var snapshotAt = await db.Queryable<ModelRankingSnapshotEntity>()
             .Where(x => x.ModelId == model.Id && x.RankingType == rankingType && x.WindowType == window)
@@ -144,7 +143,7 @@ public sealed class ModelRankingSnapshotRepository(ISqlSugarClient db, IRelaySit
             },
             RankingType = rankingType,
             Window = window,
-            SnapshotAt = snapshotAt == default ? fallbackSnapshotAt : snapshotAt,
+            SnapshotAt = snapshotAt == default ? null : snapshotAt,
             Result = new PagedResult<ModelRankingItemResponse>
             {
                 Items = items,
@@ -157,6 +156,11 @@ public sealed class ModelRankingSnapshotRepository(ISqlSugarClient db, IRelaySit
 
     private async Task<IReadOnlyList<RankingCardResponse>> QueryCardsAsync(string rankingType, string window, int limit, CancellationToken cancellationToken)
     {
+        if (rankingType.Equals("price", StringComparison.OrdinalIgnoreCase))
+        {
+            return await QueryPriceCardsFromOffersAsync(limit, cancellationToken);
+        }
+
         var items = await db.Queryable<ModelRankingSnapshotEntity, RelaySiteEntity, AiModelEntity>(
                 (snapshot, site, model) => new JoinQueryInfos(
                     JoinType.Inner, snapshot.SiteId == site.Id,
@@ -183,6 +187,48 @@ public sealed class ModelRankingSnapshotRepository(ISqlSugarClient db, IRelaySit
             .ToListAsync(cancellationToken);
 
         return items;
+    }
+
+    private async Task<IReadOnlyList<RankingCardResponse>> QueryPriceCardsFromOffersAsync(int limit, CancellationToken cancellationToken)
+    {
+        var rows = await db.Queryable<RelayOfferEntity, RelaySiteEntity, AiModelEntity>(
+                (offer, site, model) => new JoinQueryInfos(
+                    JoinType.Inner, offer.SiteId == site.Id,
+                    JoinType.Inner, offer.ModelId == model.Id))
+            .Where((offer, site, model) =>
+                offer.Status == "active" &&
+                site.Status == "active" &&
+                site.DeletedAt == null &&
+                model.DeletedAt == null)
+            .Select((offer, site, model) => new
+            {
+                ModelSlug = model.Slug,
+                ModelName = model.DisplayName,
+                SiteSlug = site.Slug,
+                SiteName = site.Name,
+                offer.EffectiveInputPriceUsd,
+                offer.EffectiveOutputPriceUsd,
+                offer.UpdatedAt
+            })
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .OrderBy(row => (row.EffectiveInputPriceUsd ?? 999999m) + (row.EffectiveOutputPriceUsd ?? 999999m))
+            .GroupBy(row => row.ModelSlug)
+            .Select(group => group.First())
+            .Take(limit)
+            .Select(row => new RankingCardResponse
+            {
+                ModelSlug = row.ModelSlug,
+                ModelName = row.ModelName,
+                SiteSlug = row.SiteSlug,
+                SiteName = row.SiteName,
+                EffectiveInputPriceUsd = row.EffectiveInputPriceUsd,
+                EffectiveOutputPriceUsd = row.EffectiveOutputPriceUsd,
+                StabilityScore = null,
+                RiskScore = null
+            })
+            .ToList();
     }
 
     private async Task<IReadOnlyList<HomePopularModelResponse>> QueryPopularModelsAsync(int limit, CancellationToken cancellationToken)
@@ -329,6 +375,26 @@ public sealed class ModelRankingSnapshotRepository(ISqlSugarClient db, IRelaySit
         if (score >= 51) return "high";
         if (score >= 21) return "medium";
         return "low";
+    }
+
+    private static ModelRankingItemResponse MapRankingItem(ModelRankingRow item)
+    {
+        return new ModelRankingItemResponse
+        {
+            SiteSlug = item.SiteSlug,
+            SiteName = item.SiteName,
+            EffectiveInputPriceUsd = item.EffectiveInputPriceUsd,
+            EffectiveOutputPriceUsd = item.EffectiveOutputPriceUsd,
+            Availability24h = item.Availability24h,
+            Stability7d = item.Stability7d,
+            FirstTokenMs = item.SpeedScore.HasValue ? (int?)Math.Round(item.SpeedScore.Value) : null,
+            FullResponseMs = item.SpeedScore.HasValue ? (int?)Math.Round(item.SpeedScore.Value) : null,
+            RiskScore = item.RiskScore,
+            RiskLevel = ResolveRiskLevel(item.RiskScore),
+            SupportsInvoice = item.SupportsInvoice,
+            SupportsRefund = item.SupportsRefund,
+            HasDocs = item.HasDocs
+        };
     }
 
     private sealed class ModelRankingRow

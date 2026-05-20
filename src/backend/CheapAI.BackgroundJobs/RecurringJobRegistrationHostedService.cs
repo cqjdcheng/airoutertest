@@ -9,18 +9,13 @@ public sealed class RecurringJobRegistrationHostedService(
     public Task StartAsync(CancellationToken cancellationToken)
     {
         recurringJobManager.AddOrUpdate<CheapAiRecurringJobs>(
-            "cheapai-price-crawl-hourly",
+            "cheapai-price-crawl-daily",
             job => job.RunPriceCrawlAsync(CancellationToken.None),
-            Cron.Hourly);
+            Cron.Daily);
 
         recurringJobManager.AddOrUpdate<CheapAiRecurringJobs>(
             "cheapai-platform-test-hourly",
             job => job.RunPlatformTestAsync(CancellationToken.None),
-            Cron.Hourly);
-
-        recurringJobManager.AddOrUpdate<CheapAiRecurringJobs>(
-            "cheapai-risk-recalculation-hourly",
-            job => job.RunRiskRecalculationAsync(CancellationToken.None),
             Cron.Hourly);
 
         recurringJobManager.AddOrUpdate<CheapAiRecurringJobs>(

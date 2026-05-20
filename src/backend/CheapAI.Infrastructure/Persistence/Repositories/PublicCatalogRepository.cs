@@ -225,8 +225,8 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
                 .Where(x => x.ModelId == model.Id)
                 .OrderBy(x => x.PriceSort)
                 .ToList();
-            var best = modelSnapshots.FirstOrDefault();
-            var fallback = modelOffers.FirstOrDefault();
+            var best = modelOffers.FirstOrDefault();
+            var fallback = modelSnapshots.FirstOrDefault();
             return new PublicModelCatalogItemResponse
             {
                 ModelSlug = model.Slug,
@@ -237,15 +237,14 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
                 ApiType = model.ApiType,
                 OfficialInputPriceUsd = model.OfficialInputPriceUsd,
                 OfficialOutputPriceUsd = model.OfficialOutputPriceUsd,
-                CheapestSiteSlug = best?.SiteSlug ?? fallback?.SiteSlug,
-                CheapestSiteName = best?.SiteName ?? fallback?.SiteName,
-                EffectiveInputPriceUsd = best?.EffectiveInputPriceUsd ?? fallback?.EffectiveInputPriceUsd,
-                EffectiveOutputPriceUsd = best?.EffectiveOutputPriceUsd ?? fallback?.EffectiveOutputPriceUsd,
-                StabilityScore = best?.StabilityScore,
-                RiskScore = best?.RiskScore,
-                RiskLevel = ResolveRiskLevel(best?.RiskScore),
-                RelaySiteCount = modelSnapshots.Select(x => x.SiteSlug)
-                    .Concat(modelOffers.Select(x => x.SiteSlug))
+                CheapestSiteSlug = best?.SiteSlug,
+                CheapestSiteName = best?.SiteName,
+                EffectiveInputPriceUsd = best?.EffectiveInputPriceUsd,
+                EffectiveOutputPriceUsd = best?.EffectiveOutputPriceUsd,
+                StabilityScore = fallback?.StabilityScore,
+                RiskScore = fallback?.RiskScore,
+                RiskLevel = ResolveRiskLevel(fallback?.RiskScore),
+                RelaySiteCount = modelOffers.Select(x => x.SiteSlug)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .Count()
             };
@@ -266,37 +265,7 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
                 continue;
             }
 
-            var rows = await db.Queryable<ModelRankingSnapshotEntity, RelaySiteEntity>(
-                    (snapshot, site) => snapshot.SiteId == site.Id)
-                .Where((snapshot, site) =>
-                    snapshot.ModelId == model.Id &&
-                    snapshot.RankingType == "price" &&
-                    snapshot.WindowType == "7d" &&
-                    site.DeletedAt == null)
-                .OrderBy((snapshot, site) => snapshot.RankPosition, OrderByType.Asc)
-                .Select((snapshot, site) => new ModelRankingItemResponse
-                {
-                    SiteSlug = site.Slug,
-                    SiteName = site.Name,
-                    EffectiveInputPriceUsd = snapshot.EffectiveInputPriceUsd,
-                    EffectiveOutputPriceUsd = snapshot.EffectiveOutputPriceUsd,
-                    Availability24h = snapshot.AvailabilityScore,
-                    Stability7d = snapshot.StabilityScore,
-                    FirstTokenMs = null,
-                    FullResponseMs = null,
-                    RiskScore = snapshot.RiskScore,
-                    RiskLevel = "low",
-                    SupportsInvoice = site.SupportsInvoice,
-                    SupportsRefund = site.SupportsRefund,
-                    HasDocs = site.HasDocs
-                })
-                .Take(limit)
-                .ToListAsync(cancellationToken);
-
-            if (rows.Count == 0)
-            {
-                rows = await QueryOfferRankingRowsAsync(model.Id, limit, cancellationToken);
-            }
+            var rows = await QueryOfferRankingRowsAsync(model.Id, limit, cancellationToken);
 
             result.Add(new PublicCheapestRankingResponse
             {

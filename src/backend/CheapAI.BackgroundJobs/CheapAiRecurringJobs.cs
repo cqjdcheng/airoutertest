@@ -14,11 +14,6 @@ public sealed class CheapAiRecurringJobs(IOperationsRepository operationsReposit
         return operationsRepository.RunManualTestAsync(null, cancellationToken);
     }
 
-    public Task RunRiskRecalculationAsync(CancellationToken cancellationToken = default)
-    {
-        return operationsRepository.RecalculateRisksAsync(null, cancellationToken);
-    }
-
     public Task RunRankingRebuildAsync(CancellationToken cancellationToken = default)
     {
         return operationsRepository.RebuildRankingsAsync(null, cancellationToken);

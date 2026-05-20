@@ -2,15 +2,42 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { getJson, type PublicEnvelope } from "@/lib/api";
 import { formatDateTime, money, riskLabel, riskTone, score } from "@/lib/format";
 import type { SiteDetailResponse } from "./page";
 
 type TabKey = "models" | "pricing" | "tests";
+type SiteTestRecord = SiteDetailResponse["latestTests"][number];
 
 type Props = {
   supportedModels: SiteDetailResponse["supportedModels"];
   pricing: SiteDetailResponse["pricing"];
   latestTests: SiteDetailResponse["latestTests"];
+};
+
+type TestProbeResult = {
+  code: string;
+  name: string;
+  category: string;
+  status: string;
+  confidence: string;
+  scoreImpact: number;
+  riskImpact: number;
+  evidence: string;
+};
+
+type TestRecordDetail = SiteTestRecord & {
+  siteName: string;
+  siteUrl?: string | null;
+  resultSummary: string;
+  matchScore: number;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  totalTokens?: number | null;
+  estimatedTokens: number;
+  tokensPerSecond?: number | null;
+  isStream: boolean;
+  checks: TestProbeResult[];
 };
 
 const pageSizeMap: Record<TabKey, number> = {
@@ -32,6 +59,9 @@ export function SiteDetailDataTabs({ supportedModels, pricing, latestTests }: Pr
     pricing: 1,
     tests: 1
   });
+  const [selectedTest, setSelectedTest] = useState<TestRecordDetail | null>(null);
+  const [testDetailLoading, setTestDetailLoading] = useState(false);
+  const [testDetailError, setTestDetailError] = useState("");
 
   const totalItems = getTotalItems(activeTab, supportedModels.length, pricing.length, latestTests.length);
   const pageSize = pageSizeMap[activeTab];
@@ -49,6 +79,24 @@ export function SiteDetailDataTabs({ supportedModels, pricing, latestTests }: Pr
       ...current,
       [activeTab]: Math.min(Math.max(1, nextPage), totalPages)
     }));
+  }
+
+  async function openTestDetail(item: SiteTestRecord) {
+    setSelectedTest(toDetailFallback(item));
+    setTestDetailError("");
+
+    if (!item.publicId) {
+      return;
+    }
+
+    setTestDetailLoading(true);
+    const response = await getJson<PublicEnvelope<TestRecordDetail>>(`/api/v1/public/tests/${encodeURIComponent(item.publicId)}`);
+    if (response?.data) {
+      setSelectedTest(response.data);
+    } else {
+      setTestDetailError("详情加载失败，当前仅显示列表中的基础信息。");
+    }
+    setTestDetailLoading(false);
   }
 
   return (
@@ -175,9 +223,9 @@ export function SiteDetailDataTabs({ supportedModels, pricing, latestTests }: Pr
                     <td>{formatDateTime(item.testedAt)}</td>
                     <td>
                       {item.publicId ? (
-                        <Link className="text-button" href={`/tests?detail=${encodeURIComponent(item.publicId)}`}>
+                        <button className="text-button" type="button" onClick={() => openTestDetail(item)}>
                           查看详情
-                        </Link>
+                        </button>
                       ) : (
                         "-"
                       )}
@@ -207,6 +255,18 @@ export function SiteDetailDataTabs({ supportedModels, pricing, latestTests }: Pr
           </button>
         </div>
       </div>
+
+      {selectedTest ? (
+        <SiteTestDetailModal
+          detail={selectedTest}
+          loading={testDetailLoading}
+          error={testDetailError}
+          onClose={() => {
+            setSelectedTest(null);
+            setTestDetailError("");
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -232,12 +292,139 @@ function statusLabel(status: string) {
   return status || "未知";
 }
 
+function statusTone(status: string) {
+  if (status === "success" || status === "succeeded") return "success";
+  if (status === "failed" || status === "error") return "danger";
+  return "neutral";
+}
+
 function testTypeLabel(testType: string) {
   if (testType === "platform" || testType === "system" || testType === "auto") return "平台测试";
   if (testType === "user" || testType === "self") return "用户自测";
   return testType || "未知测试";
 }
 
+function probeStatusLabel(status: string) {
+  if (status === "pass") return "通过";
+  if (status === "warn") return "可疑";
+  if (status === "fail") return "失败";
+  return "未知";
+}
+
+function confidenceLabel(confidence: string) {
+  if (confidence === "high") return "高置信";
+  if (confidence === "medium") return "中置信";
+  if (confidence === "low") return "低置信";
+  return "未知置信";
+}
+
 function formatMs(value?: number | null) {
   return typeof value === "number" ? `${value}ms` : "-";
+}
+
+function formatOptionalNumber(value?: number | null) {
+  return typeof value === "number" ? value.toLocaleString("zh-CN") : "-";
+}
+
+function DetailMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function toDetailFallback(item: SiteTestRecord): TestRecordDetail {
+  return {
+    ...item,
+    siteName: "",
+    siteUrl: null,
+    resultSummary: item.errorMessage ?? "正在加载详细检测结果。",
+    matchScore: 0,
+    inputTokens: null,
+    outputTokens: null,
+    totalTokens: null,
+    estimatedTokens: 0,
+    tokensPerSecond: null,
+    isStream: true,
+    checks: []
+  };
+}
+
+function SiteTestDetailModal({
+  detail,
+  loading,
+  error,
+  onClose
+}: {
+  detail: TestRecordDetail;
+  loading: boolean;
+  error: string;
+  onClose: () => void;
+}) {
+  return (
+    <div className="challenge-modal" role="dialog" aria-modal="true" aria-labelledby="site-test-detail-title">
+      <div className="challenge-modal__backdrop" onClick={onClose} />
+      <div className="challenge-modal__panel test-detail-modal">
+        <div className="scan-card__header">
+          <div>
+            <p className="eyebrow">{testTypeLabel(detail.testType)}</p>
+            <h2 id="site-test-detail-title">{detail.modelName}</h2>
+          </div>
+          <button className="challenge-modal__close" onClick={onClose} type="button">
+            关闭
+          </button>
+        </div>
+
+        {error ? <div className="relay-error mt-4">{error}</div> : null}
+
+        <div className="test-detail-summary mt-5">
+          <span className="status-pill" data-tone={statusTone(detail.status)}>
+            {loading ? "加载详情中" : statusLabel(detail.status)}
+          </span>
+          <span className="status-pill" data-tone={riskTone(detail.riskLevel)}>
+            {riskLabel(detail.riskLevel)} / {score(detail.riskScore)}
+          </span>
+          <span className="status-pill" data-tone="neutral">
+            {formatDateTime(detail.testedAt)}
+          </span>
+        </div>
+
+        <p className="test-detail-copy">{detail.resultSummary || detail.errorMessage || "暂无摘要。"}</p>
+
+        <div className="test-detail-grid">
+          <DetailMetric label="匹配度" value={score(detail.matchScore)} />
+          <DetailMetric label="首 token" value={formatMs(detail.firstTokenMs)} />
+          <DetailMetric label="完整响应" value={formatMs(detail.fullResponseMs)} />
+          <DetailMetric label="Tokens/s" value={formatOptionalNumber(detail.tokensPerSecond)} />
+          <DetailMetric label="输入 Token" value={formatOptionalNumber(detail.inputTokens)} />
+          <DetailMetric label="输出 Token" value={formatOptionalNumber(detail.outputTokens)} />
+          <DetailMetric label="总 Token" value={formatOptionalNumber(detail.totalTokens)} />
+          <DetailMetric label="预估 Token" value={formatOptionalNumber(detail.estimatedTokens)} />
+        </div>
+
+        <div className="test-detail-checks">
+          <h3>检测项</h3>
+          {detail.checks?.length ? (
+            <div className="probe-grid">
+              {detail.checks.map((check) => (
+                <article className="probe-card" data-status={check.status} key={`${check.code}-${check.name}`}>
+                  <div>
+                    <strong>{check.code}</strong>
+                    <span>{check.category}</span>
+                  </div>
+                  <h4>{check.name}</h4>
+                  <p>{check.evidence}</p>
+                  <small>{probeStatusLabel(check.status)} / {confidenceLabel(check.confidence)}</small>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">当前记录没有检测项明细。</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }

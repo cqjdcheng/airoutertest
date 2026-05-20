@@ -7,7 +7,6 @@ import {
   fetchJobLogs,
   fetchScheduledJobs,
   rebuildRankings,
-  recalculateRisks,
   runManualCrawl,
   runManualTest,
   type JobActionResponse,
@@ -86,7 +85,6 @@ export default function JobsPage() {
             <Space wrap>
               <Button size="large" loading={actionLoading === "crawl"} onClick={() => runAction("crawl", runManualCrawl)}>手动抓价</Button>
               <Button size="large" loading={actionLoading === "test"} onClick={() => runAction("test", runManualTest)}>立即自动测试</Button>
-              <Button size="large" loading={actionLoading === "risk"} onClick={() => runAction("risk", recalculateRisks)}>重算风险</Button>
               <Button size="large" loading={actionLoading === "ranking"} onClick={() => runAction("ranking", rebuildRankings)}>重建排行</Button>
               <Button type="primary" size="large" onClick={load}>刷新日志</Button>
             </Space>

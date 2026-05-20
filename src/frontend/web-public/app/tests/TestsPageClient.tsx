@@ -156,9 +156,9 @@ export function TestsPageClient({
     setDetailLoading(false);
   }
 
-  async function refreshAllRecords() {
+  async function refreshAllRecords(targetPage = page) {
     setAllRecordsLoading(true);
-    const response = await getJson<PublicEnvelope<PagedResult<TestRecord>>>("/api/v1/public/tests/latest?page=1&pageSize=20");
+    const response = await getJson<PublicEnvelope<PagedResult<TestRecord>>>(`/api/v1/public/tests/latest?page=${targetPage}&pageSize=20`);
     if (response?.data) {
       setAllRecords(response.data.items);
       setAllRecordsTotal(response.data.total);
@@ -168,12 +168,11 @@ export function TestsPageClient({
 
   function handleSelfTestCompleted() {
     setHistoryItems(readSelfTestHistory());
-    refreshAllRecords();
+    refreshAllRecords(1);
     setActiveTab("all");
   }
 
-  const mergedAllRecords = mergeTestRecords(allRecords, myRecords);
-  const visibleRecords = activeTab === "mine" ? myRecords : mergedAllRecords;
+  const visibleRecords = activeTab === "mine" ? myRecords : allRecords;
   const visibleLoading = activeTab === "mine" ? myRecordsLoading : allRecordsLoading;
   const resolvedMaxPages = Math.max(1, Math.ceil(Math.min(allRecordsTotal, 200) / 20));
 
@@ -462,21 +461,6 @@ function detailToRecord(detail: TestRecordDetail, sourceKey?: string): TestRecor
     riskLevel: detail.riskLevel,
     testedAt: detail.testedAt
   };
-}
-
-function mergeTestRecords(primary: TestRecord[], fallback: TestRecord[]) {
-  const seen = new Set<string>();
-  return [...primary, ...fallback]
-    .filter((item) => {
-      const key = item.publicId || (item.id ? String(item.id) : item.sourceKey) || `${item.siteUrl}-${item.modelName}-${item.testedAt}`;
-      if (seen.has(key)) {
-        return false;
-      }
-
-      seen.add(key);
-      return true;
-    })
-    .sort((left, right) => Date.parse(right.testedAt) - Date.parse(left.testedAt));
 }
 
 function historyToRecord(item: SelfTestHistoryItem): TestRecord {

@@ -22,19 +22,14 @@ builder.Services.AddQuartz(q =>
     q.UseDefaultThreadPool(options => options.MaxConcurrency = 3);
 
     q.ScheduleJob<PriceCrawlQuartzJob>(trigger => trigger
-        .WithIdentity("cheapai-price-crawl-hourly")
+        .WithIdentity("cheapai-price-crawl-daily")
         .StartNow()
-        .WithSimpleSchedule(schedule => schedule.WithIntervalInHours(1).RepeatForever()));
+        .WithSimpleSchedule(schedule => schedule.WithIntervalInHours(24).RepeatForever()));
 
     q.ScheduleJob<AutoTestQuartzJob>(trigger => trigger
         .WithIdentity("cheapai-auto-test-minutely")
         .StartNow()
         .WithSimpleSchedule(schedule => schedule.WithIntervalInMinutes(1).RepeatForever()));
-
-    q.ScheduleJob<RiskRecalculationQuartzJob>(trigger => trigger
-        .WithIdentity("cheapai-risk-recalculation-hourly")
-        .StartNow()
-        .WithSimpleSchedule(schedule => schedule.WithIntervalInHours(1).RepeatForever()));
 
     q.ScheduleJob<RankingRebuildQuartzJob>(trigger => trigger
         .WithIdentity("cheapai-ranking-rebuild-hourly")

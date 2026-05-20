@@ -1,6 +1,7 @@
 using CheapAI.Application.Common.Paging;
 using CheapAI.Application.Operations;
 using CheapAI.Application.Participation;
+using CheapAI.Application.RelaySites;
 using CheapAI.Application.Scoring;
 using CheapAI.Infrastructure.Persistence.Entities;
 using SqlSugar;
@@ -11,7 +12,7 @@ using System.Text.Json;
 
 namespace CheapAI.Infrastructure.Persistence.Repositories;
 
-public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner selfTestRunner) : IOperationsRepository
+public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner selfTestRunner, IRelayPricingCrawler relayPricingCrawler) : IOperationsRepository
 {
     public async Task<PagedResult<RelayOfferListItemResponse>> GetOffersAsync(OperationListQuery query, CancellationToken cancellationToken = default)
     {
@@ -219,9 +220,8 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
         var now = DateTime.UtcNow;
         return
         [
-            BuildScheduledJob("price-crawl", "价格抓取", "Quartz 每小时执行一次；后台也可手动触发。", logs, now.AddHours(1)),
+            BuildScheduledJob("price-crawl", "价格抓取", "Quartz 每 24 小时执行一次；后台也可手动触发。", logs, now.AddHours(24)),
             BuildScheduledJob("test", "中转自动测试", "Quartz 每分钟扫描一次；仅测试已启用自动测试、配置测试 Key、且模型报价也开启自动测试的记录；单站点按测试间隔到期后执行，最低 15 分钟。", logs, now.AddMinutes(1)),
-            BuildScheduledJob("risk", "风险重算", "Quartz 每小时执行一次；按最新测试记录重算风险证据。", logs, now.AddHours(1)),
             BuildScheduledJob("ranking", "排行重建", "Quartz 每小时执行一次；重建价格、稳定性和综合排行快照。", logs, now.AddHours(1))
         ];
     }
@@ -278,60 +278,73 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
         var sites = await db.Queryable<RelaySiteEntity>()
             .Where(x => x.DeletedAt == null && x.Status == "active")
             .ToListAsync(cancellationToken);
-        var models = await db.Queryable<AiModelEntity>()
-            .Where(x => x.DeletedAt == null && x.Status == "active")
-            .ToListAsync(cancellationToken);
 
         var affected = 0;
+        var failed = 0;
         foreach (var site in sites)
         {
-            foreach (var model in models)
+            try
             {
-                var officialInput = model.OfficialInputPriceUsd ?? 0;
-                var officialOutput = model.OfficialOutputPriceUsd ?? 0;
-                var siteInput = Math.Round(officialInput * 0.8m, 6);
-                var siteOutput = Math.Round(officialOutput * 0.8m, 6);
-                var entity = new RelayOfferEntity
+                var previewItems = await relayPricingCrawler.PreviewAsync(new RelayPricingPreviewRequest
                 {
-                    SiteId = site.Id,
-                    ModelId = model.Id,
-                    SourceType = "crawl",
-                    Currency = "USD",
-                    OfficialInputPriceUsd = officialInput,
-                    OfficialOutputPriceUsd = officialOutput,
-                    SiteInputPriceUsd = siteInput,
-                    SiteOutputPriceUsd = siteOutput,
+                    BaseUrl = site.BaseUrl,
+                    ProviderType = RelayPricingProviderType.Auto,
+                    ApiKey = site.TestApiKey,
                     RechargeRatio = 1,
-                    BonusRatio = 0,
-                    EffectiveInputPriceUsd = PriceCalculator.CalculateEffectiveUsd(siteInput, 1, 0),
-                    EffectiveOutputPriceUsd = PriceCalculator.CalculateEffectiveUsd(siteOutput, 1, 0),
-                    Status = "active",
-                    CrawledAt = now,
-                    CreatedAt = now,
-                    UpdatedAt = now
-                };
+                    BonusRatio = 0
+                }, cancellationToken);
 
-                var existing = await db.Queryable<RelayOfferEntity>()
-                    .FirstAsync(x => x.SiteId == site.Id && x.ModelId == model.Id && x.SourceType == "crawl", cancellationToken);
-
-                if (existing is null)
+                foreach (var item in previewItems)
                 {
-                    await db.Insertable(entity).ExecuteCommandAsync(cancellationToken);
-                }
-                else
-                {
-                    entity.Id = existing.Id;
-                    entity.CreatedAt = existing.CreatedAt;
-                    await db.Updateable(entity).ExecuteCommandAsync(cancellationToken);
-                }
+                    var modelId = await ResolveCrawledModelIdAsync(item, now, cancellationToken);
+                    var existing = await db.Queryable<RelayOfferEntity>()
+                        .FirstAsync(x => x.SiteId == site.Id && x.ModelId == modelId && x.SourceType == "crawl", cancellationToken);
 
-                affected++;
+                    var siteInput = item.SiteInputPriceUsd ?? item.EffectiveInputPriceUsd;
+                    var siteOutput = item.SiteOutputPriceUsd ?? item.EffectiveOutputPriceUsd;
+                    var entity = new RelayOfferEntity
+                    {
+                        SiteId = site.Id,
+                        ModelId = modelId,
+                        SourceType = "crawl",
+                        Currency = "USD",
+                        SiteInputPriceUsd = siteInput,
+                        SiteOutputPriceUsd = siteOutput,
+                        RechargeRatio = item.RechargeRatio <= 0 ? 1 : item.RechargeRatio,
+                        BonusRatio = item.BonusRatio,
+                        EffectiveInputPriceUsd = item.EffectiveInputPriceUsd ?? CalculateEffective(siteInput, item.RechargeRatio, item.BonusRatio),
+                        EffectiveOutputPriceUsd = item.EffectiveOutputPriceUsd ?? CalculateEffective(siteOutput, item.RechargeRatio, item.BonusRatio),
+                        Status = string.IsNullOrWhiteSpace(item.Status) ? "active" : item.Status,
+                        AutoTestEnabled = existing?.AutoTestEnabled ?? false,
+                        CrawledAt = now,
+                        CreatedAt = existing?.CreatedAt ?? now,
+                        UpdatedAt = now
+                    };
+
+                    if (existing is null)
+                    {
+                        await db.Insertable(entity).ExecuteCommandAsync(cancellationToken);
+                    }
+                    else
+                    {
+                        entity.Id = existing.Id;
+                        await db.Updateable(entity).ExecuteCommandAsync(cancellationToken);
+                    }
+
+                    affected++;
+                }
+            }
+            catch
+            {
+                failed++;
             }
         }
 
         await MarkCrawlJobSucceededAsync(jobId, affected, now, cancellationToken);
-        return await LogActionAsync("crawl", jobId, affected, "价格抓取样本已生成", now, cancellationToken);
+        var message = failed == 0 ? "价格抓取已完成" : $"价格抓取已完成，{failed} 个站点抓取失败";
+        return await LogActionAsync("crawl", jobId, affected, message, now, cancellationToken);
     }
+
 
     public async Task<JobActionResponse> RunManualTestAsync(ulong? adminUserId, CancellationToken cancellationToken = default)
     {
@@ -391,7 +404,7 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
             };
             var result = await selfTestRunner.ExecuteAsync(request, cancellationToken);
             var status = NormalizeRecordStatus(result.Status);
-            await db.Insertable(new TestRecordEntity
+            var record = new TestRecordEntity
             {
                 SiteId = offer.SiteId,
                 ModelId = offer.ModelId,
@@ -422,7 +435,9 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
                 ChecksJson = JsonSerializer.Serialize(result.Checks),
                 TestedAt = now,
                 CreatedAt = now
-            }).ExecuteCommandAsync(cancellationToken);
+            };
+            record.Id = (ulong)await db.Insertable(record).ExecuteReturnBigIdentityAsync();
+            await UpsertRiskEvidenceFromTestRecordAsync(record, now, cancellationToken);
 
             await db.Updateable<RelaySiteEntity>()
                 .SetColumns(x => new RelaySiteEntity
@@ -459,52 +474,60 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
                 continue;
             }
 
-            var riskScore = record.RiskScore > 0
-                ? record.RiskScore
-                : RiskScoreCalculator.ResolveRiskScore(record.Status, record.FirstTokenMs, record.FullResponseMs);
-            var entity = new RiskEvidenceEntity
-            {
-                SiteId = record.SiteId,
-                ModelId = record.ModelId,
-                TestRecordId = record.Id,
-                RuleCode = "unified_test_signal",
-                RiskLevel = string.IsNullOrWhiteSpace(record.RiskLevel) ? RiskScoreCalculator.ResolveRiskLevel(riskScore) : record.RiskLevel,
-                RiskScore = riskScore,
-                EvidenceSummary = record.ResultSummary ?? "基于统一测试状态、首 token 耗时和完整响应耗时生成的基础风险证据。",
-                EvidenceJson = JsonSerializer.Serialize(new
-                {
-                    record.Status,
-                    record.TestType,
-                    record.FirstTokenMs,
-                    record.FullResponseMs,
-                    record.MatchScore,
-                    record.InputTokens,
-                    record.OutputTokens,
-                    record.TotalTokens
-                }),
-                ReviewStatus = "pending",
-                CreatedAt = now,
-                UpdatedAt = now
-            };
-
-            var existing = await db.Queryable<RiskEvidenceEntity>()
-                .FirstAsync(x => x.SiteId == record.SiteId && x.ModelId == record.ModelId && x.RuleCode == entity.RuleCode, cancellationToken);
-
-            if (existing is null)
-            {
-                await db.Insertable(entity).ExecuteCommandAsync(cancellationToken);
-            }
-            else
-            {
-                entity.Id = existing.Id;
-                entity.CreatedAt = existing.CreatedAt;
-                await db.Updateable(entity).ExecuteCommandAsync(cancellationToken);
-            }
-
+            await UpsertRiskEvidenceFromTestRecordAsync(record, now, cancellationToken);
             affected++;
         }
 
         return await LogActionAsync("risk", null, affected, "基础风险分已重算", now, cancellationToken);
+    }
+
+    private async Task UpsertRiskEvidenceFromTestRecordAsync(TestRecordEntity record, DateTime now, CancellationToken cancellationToken)
+    {
+        if (record.SiteId == 0 || record.ModelId == 0)
+        {
+            return;
+        }
+
+        var riskScore = record.RiskScore > 0
+            ? record.RiskScore
+            : RiskScoreCalculator.ResolveRiskScore(record.Status, record.FirstTokenMs, record.FullResponseMs);
+        var entity = new RiskEvidenceEntity
+        {
+            SiteId = record.SiteId,
+            ModelId = record.ModelId,
+            TestRecordId = record.Id,
+            RuleCode = "unified_test_signal",
+            RiskLevel = string.IsNullOrWhiteSpace(record.RiskLevel) ? RiskScoreCalculator.ResolveRiskLevel(riskScore) : record.RiskLevel,
+            RiskScore = riskScore,
+            EvidenceSummary = record.ResultSummary ?? "Generated from the latest unified test result.",
+            EvidenceJson = JsonSerializer.Serialize(new
+            {
+                record.Status,
+                record.TestType,
+                record.FirstTokenMs,
+                record.FullResponseMs,
+                record.MatchScore,
+                record.InputTokens,
+                record.OutputTokens,
+                record.TotalTokens
+            }),
+            ReviewStatus = "pending",
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+
+        var existing = await db.Queryable<RiskEvidenceEntity>()
+            .FirstAsync(x => x.SiteId == record.SiteId && x.ModelId == record.ModelId && x.RuleCode == entity.RuleCode, cancellationToken);
+
+        if (existing is null)
+        {
+            await db.Insertable(entity).ExecuteCommandAsync(cancellationToken);
+            return;
+        }
+
+        entity.Id = existing.Id;
+        entity.CreatedAt = existing.CreatedAt;
+        await db.Updateable(entity).ExecuteCommandAsync(cancellationToken);
     }
 
     public async Task<JobActionResponse> RebuildRankingsAsync(ulong? adminUserId, CancellationToken cancellationToken = default)
@@ -622,6 +645,87 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
         }
 
         return affected;
+    }
+
+    private async Task<ulong> ResolveCrawledModelIdAsync(RelayPricingPreviewItemResponse item, DateTime now, CancellationToken cancellationToken)
+    {
+        var requestName = FirstNonEmpty(item.RequestName, item.OfficialModelId, item.DisplayName).Trim();
+        var officialModelId = FirstNonEmpty(item.OfficialModelId, requestName);
+        var existing = await db.Queryable<AiModelEntity>()
+            .FirstAsync(x =>
+                x.DeletedAt == null &&
+                (x.RequestName == requestName || x.OfficialModelId == officialModelId),
+                cancellationToken);
+
+        if (existing is not null)
+        {
+            await db.Updateable<AiModelEntity>()
+                .SetColumns(x => new AiModelEntity
+                {
+                    DisplayName = string.IsNullOrWhiteSpace(item.DisplayName) ? existing.DisplayName : item.DisplayName.Trim(),
+                    RequestName = string.IsNullOrWhiteSpace(existing.RequestName) ? requestName : existing.RequestName,
+                    ApiType = string.IsNullOrWhiteSpace(existing.ApiType) ? NormalizeCrawledApiType(item.ApiType, requestName) : existing.ApiType,
+                    UpdatedAt = now
+                })
+                .Where(x => x.Id == existing.Id)
+                .ExecuteCommandAsync(cancellationToken);
+            return existing.Id;
+        }
+
+        var displayName = FirstNonEmpty(item.DisplayName, requestName, officialModelId);
+        var slug = await ResolveUniqueModelSlugAsync(SlugHelper.Normalize(null, displayName), cancellationToken);
+        return (ulong)await db.Insertable(new AiModelEntity
+        {
+            Slug = slug,
+            Vendor = "Custom",
+            OfficialModelId = officialModelId,
+            RequestName = requestName,
+            ApiType = NormalizeCrawledApiType(item.ApiType, requestName),
+            DisplayName = displayName,
+            Description = "Created from relay price crawl.",
+            Status = "active",
+            SortOrder = 1000,
+            CreatedAt = now,
+            UpdatedAt = now
+        }).ExecuteReturnBigIdentityAsync();
+    }
+
+    private async Task<string> ResolveUniqueModelSlugAsync(string slug, CancellationToken cancellationToken)
+    {
+        if (!await db.Queryable<AiModelEntity>().AnyAsync(x => x.Slug == slug && x.DeletedAt == null, cancellationToken))
+        {
+            return slug;
+        }
+
+        var suffix = 2;
+        while (true)
+        {
+            var candidate = $"{slug}-{suffix++}";
+            if (!await db.Queryable<AiModelEntity>().AnyAsync(x => x.Slug == candidate && x.DeletedAt == null, cancellationToken))
+            {
+                return candidate;
+            }
+        }
+    }
+
+    private static decimal? CalculateEffective(decimal? price, decimal rechargeRatio, decimal bonusRatio)
+    {
+        if (!price.HasValue)
+        {
+            return null;
+        }
+
+        return PriceCalculator.CalculateEffectiveUsd(price.Value, rechargeRatio <= 0 ? 1 : rechargeRatio, bonusRatio);
+    }
+
+    private static string NormalizeCrawledApiType(string? apiType, string requestName)
+    {
+        if (string.Equals(apiType, "anthropic", StringComparison.OrdinalIgnoreCase))
+        {
+            return "anthropic";
+        }
+
+        return requestName.Contains("claude", StringComparison.OrdinalIgnoreCase) ? "anthropic" : "openai";
     }
 
     private async Task MarkCrawlJobSucceededAsync(ulong jobId, int affected, DateTime now, CancellationToken cancellationToken)

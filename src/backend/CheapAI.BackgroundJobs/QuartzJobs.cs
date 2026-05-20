@@ -18,14 +18,6 @@ public sealed class AutoTestQuartzJob(CheapAiRecurringJobs jobs) : IJob
     }
 }
 
-public sealed class RiskRecalculationQuartzJob(CheapAiRecurringJobs jobs) : IJob
-{
-    public Task Execute(IJobExecutionContext context)
-    {
-        return jobs.RunRiskRecalculationAsync(context.CancellationToken);
-    }
-}
-
 public sealed class RankingRebuildQuartzJob(CheapAiRecurringJobs jobs) : IJob
 {
     public Task Execute(IJobExecutionContext context)
