@@ -210,6 +210,7 @@ export function RelayTestPanel({
   }
 
   const passCount = useMemo(() => result?.checks.filter((item) => item.status === "pass").length ?? 0, [result]);
+  const attentionCount = useMemo(() => result?.checks.filter((item) => item.status === "warn" || item.status === "fail").length ?? 0, [result]);
 
   return (
     <div className="relay-test-panel">
@@ -375,16 +376,16 @@ export function RelayTestPanel({
             </div>
             <div>
               <p className="eyebrow">测试结果</p>
-              <h3>{result.status === "succeeded" ? "检测完成" : "存在风险"}</h3>
+              <h3>{result.status === "succeeded" ? "请求完成，查看评分" : "请求失败"}</h3>
               <p>{result.resultSummary}</p>
               <div className="relay-result__meta">
                 <span>{siteUrl}</span>
                 <span>{targetModel}</span>
-                <span>{passCount}/{result.checks.length} 项通过</span>
+                <span>{passCount} 项正常 / {attentionCount} 项需关注</span>
               </div>
             </div>
             <span className="status-pill" data-tone={riskTone(result.riskLevel)}>
-              {riskLabel(result.riskLevel)} / {Math.round(result.riskScore)}
+              {riskLabel(result.riskLevel)} · 风险分 {Math.round(result.riskScore)}
             </span>
           </div>
 
@@ -406,7 +407,7 @@ export function RelayTestPanel({
                 </div>
                 <h4>{check.name}</h4>
                 <p>{check.evidence}</p>
-                <small>{statusText(check.status)} / {confidenceText(check.confidence)}</small>
+                <small>{statusText(check.status)} · {confidenceText(check.confidence)}</small>
               </article>
             ))}
           </div>
@@ -436,7 +437,7 @@ export function RelayTestPanel({
                   </div>
                   <div className="history-row__signals">
                     <span className="status-pill" data-tone={item.status === "succeeded" ? "success" : "danger"}>
-                      {item.status}
+                      {item.status === "succeeded" ? "请求完成" : "请求失败"}
                     </span>
                     <span className="status-pill" data-tone={riskTone(item.riskLevel)}>
                       {riskLabel(item.riskLevel)}
@@ -481,17 +482,17 @@ function formatNumber(value?: number | null) {
 
 function statusText(status: SelfTestProbeResult["status"]) {
   return {
-    pass: "通过",
-    warn: "可疑",
-    fail: "失败",
-    unknown: "未知"
+    pass: "正常",
+    warn: "需关注",
+    fail: "未达标",
+    unknown: "未检测"
   }[status];
 }
 
 function confidenceText(confidence: SelfTestProbeResult["confidence"]) {
   return {
-    high: "高置信",
-    medium: "中置信",
-    low: "低置信"
+    high: "依据充分",
+    medium: "一般参考",
+    low: "辅助参考"
   }[confidence];
 }

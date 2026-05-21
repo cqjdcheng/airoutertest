@@ -246,7 +246,7 @@ function TrendBars({
 }
 
 function statusLabel(status: string) {
-  if (status === "success" || status === "succeeded") return "成功";
-  if (status === "failed" || status === "error") return "失败";
+  if (status === "success" || status === "succeeded") return "请求完成";
+  if (status === "failed" || status === "error") return "请求失败";
   return status || "未知";
 }

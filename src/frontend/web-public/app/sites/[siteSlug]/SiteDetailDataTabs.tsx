@@ -288,7 +288,7 @@ function hasValidPrice(item: SiteDetailResponse["pricing"][number]) {
 
 function statusLabel(status: string) {
   if (status === "success" || status === "succeeded") return "成功";
-  if (status === "failed" || status === "error") return "失败";
+  if (status === "failed" || status === "error") return "请求失败";
   return status || "未知";
 }
 
@@ -305,17 +305,17 @@ function testTypeLabel(testType: string) {
 }
 
 function probeStatusLabel(status: string) {
-  if (status === "pass") return "通过";
-  if (status === "warn") return "可疑";
-  if (status === "fail") return "失败";
-  return "未知";
+  if (status === "pass") return "正常";
+  if (status === "warn") return "需关注";
+  if (status === "fail") return "请求失败";
+  return "未检测";
 }
 
 function confidenceLabel(confidence: string) {
-  if (confidence === "high") return "高置信";
-  if (confidence === "medium") return "中置信";
-  if (confidence === "low") return "低置信";
-  return "未知置信";
+  if (confidence === "high") return "依据充分";
+  if (confidence === "medium") return "一般参考";
+  if (confidence === "low") return "辅助参考";
+  return "参考信息";
 }
 
 function formatMs(value?: number | null) {
@@ -416,7 +416,7 @@ function SiteTestDetailModal({
                   </div>
                   <h4>{check.name}</h4>
                   <p>{check.evidence}</p>
-                  <small>{probeStatusLabel(check.status)} / {confidenceLabel(check.confidence)}</small>
+                  <small>{probeStatusLabel(check.status)} · {confidenceLabel(check.confidence)}</small>
                 </article>
               ))}
             </div>

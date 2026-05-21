@@ -28,22 +28,22 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
 
         if (IsReservedHost(endpoint.Host))
         {
-            return Failed(30, "medium", "The test URL is a reserved domain. External request was skipped for local automation; real relay sites will be tested with an actual request.", [
-                Probe("D1", "协议连通性", "协议", "warn", "high", 8, 12, "Reserved example domain was not requested.")
+            return Failed(30, "medium", "测试地址是示例保留域名，本地自动化不会真实请求；真实中转站会发起实际请求。", [
+                Probe("D1", "协议连通性", "协议", "warn", "high", 8, 12, "示例保留域名不会发起外部请求。")
             ]);
         }
 
         if (IsBlockedNetworkHost(endpoint.Host))
         {
-            return Failed(90, "high", "The test URL points to a local, private, or metadata network host and was blocked.", [
-                Probe("D1", "协议连通性", "协议", "fail", "high", 0, 55, "Local, private, link-local, or metadata network host is blocked.")
+            return Failed(90, "high", "测试地址指向本机、内网或 metadata 网络，已被安全策略拦截。", [
+                Probe("D1", "协议连通性", "协议", "fail", "high", 0, 55, "目标地址属于本机、内网、链路本地或 metadata 网络，已被安全策略拦截。")
             ]);
         }
 
         if (string.IsNullOrWhiteSpace(request.ApiKey))
         {
-            return Failed(70, "high", "API Key is required to run a real model request.", [
-                Probe("D1", "协议连通性", "协议", "fail", "high", 0, 40, "Missing API Key.")
+            return Failed(70, "high", "需要填写 API Key 才能发起真实模型请求。", [
+                Probe("D1", "协议连通性", "协议", "fail", "high", 0, 40, "未填写 API Key，无法发起真实模型请求。")
             ]);
         }
 
@@ -75,25 +75,25 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             stopwatch.Stop();
-            return Failed(55, "medium", "The request timed out. The relay may be unreachable, slow, or unstable.", [
-                Probe("D1", "协议连通性", "协议", "fail", "high", 0, 30, "Request timeout after 45 seconds."),
-                Probe("D8", "响应时延", "性能", "fail", "high", 0, 25, "Full response exceeded timeout.")
+            return Failed(55, "medium", "请求超时，中转可能不可达、过慢或不稳定。", [
+                Probe("D1", "协议连通性", "协议", "fail", "high", 0, 30, "请求超过 45 秒未完成，判定为链路超时。"),
+                Probe("D8", "响应时延", "性能", "fail", "high", 0, 25, "完整响应超过超时时间，接口可能不可达、过慢或不稳定。")
             ], fullResponseMs: (int)Math.Min(stopwatch.ElapsedMilliseconds, int.MaxValue));
         }
         catch (HttpRequestException exception)
         {
             stopwatch.Stop();
-            return Failed(50, "medium", $"Request failed: {exception.Message}", [
-                Probe("D1", "协议连通性", "协议", "fail", "high", 0, 30, "HTTP request exception."),
-                Probe("S4", "错误响应泄露", "安全", "unknown", "low", 0, 0, "No relay error body was exposed to CheapAI.")
+            return Failed(50, "medium", $"请求失败：{exception.Message}", [
+                Probe("D1", "协议连通性", "协议", "fail", "high", 0, 30, "HTTP 请求异常，未能完成真实请求。"),
+                Probe("S4", "错误响应泄露", "安全", "unknown", "low", 0, 0, "CheapAI 未保存或展示中转返回的错误正文。")
             ], fullResponseMs: (int)Math.Min(stopwatch.ElapsedMilliseconds, int.MaxValue));
         }
         catch (JsonException exception)
         {
             stopwatch.Stop();
-            return Failed(65, "high", $"Response parsing failed: {exception.Message}", [
-                Probe("D2", "响应结构", "协议", "fail", "high", 0, 35, "Response is not valid JSON / SSE JSON."),
-                Probe("D5", "内容完整性", "完整性", "fail", "high", 0, 20, "Response cannot be parsed.")
+            return Failed(65, "high", $"响应解析失败：{exception.Message}", [
+                Probe("D2", "响应结构", "协议", "fail", "high", 0, 35, "响应不是有效的 JSON 或 SSE JSON，无法按目标协议解析。"),
+                Probe("D5", "内容完整性", "完整性", "fail", "high", 0, 20, "响应解析失败，因此无法读取模型正文。")
             ], fullResponseMs: (int)Math.Min(stopwatch.ElapsedMilliseconds, int.MaxValue));
         }
     }
@@ -269,8 +269,8 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
     {
         var checks = new List<SelfTestProbeResult>
         {
-            Probe("D1", "协议连通性", "协议", "pass", "high", 15, 0, $"HTTP {(int)httpResponse.StatusCode}; endpoint {endpoint.Host}."),
-            Probe("D2", "响应结构", "协议", response.OpenAiShapeValid ? "pass" : "fail", "high", response.OpenAiShapeValid ? 20 : 0, response.OpenAiShapeValid ? 0 : 35, response.OpenAiShapeValid ? "OpenAI compatible choices structure detected." : "Missing choices / message / delta structure.")
+            Probe("D1", "协议连通性", "协议", "pass", "high", 15, 0, $"真实请求已连通：HTTP {(int)httpResponse.StatusCode}，目标主机 {endpoint.Host}。"),
+            Probe("D2", "响应结构", "协议", response.OpenAiShapeValid ? "pass" : "warn", "high", response.OpenAiShapeValid ? 20 : 0, response.OpenAiShapeValid ? 0 : 35, BuildResponseShapeEvidence(apiType, response.OpenAiShapeValid, request.IsStream))
         };
 
         checks.Add(BuildContentIntegrityProbe(response.Content));
@@ -292,17 +292,17 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
                 response.StreamIntegrityValid == true ? 10 : 4,
                 response.StreamIntegrityValid == true ? 0 : 12,
                 response.StreamIntegrityValid == true
-                    ? $"SSE chunks={response.StreamChunkCount}; done={response.StreamDoneSeen}."
-                    : $"Stream completed with weak integrity signal; chunks={response.StreamChunkCount}; done={response.StreamDoneSeen}."));
+                    ? $"流式响应完整：收到 {response.StreamChunkCount} 个数据片段，结束标记={response.StreamDoneSeen}。"
+                    : $"流式响应已完成，但结束信号不够完整：数据片段 {response.StreamChunkCount} 个，结束标记={response.StreamDoneSeen}。"));
         }
         else
         {
-            checks.Add(Probe("S5", "流完整性", "安全", "unknown", "high", 0, 0, "Non-stream request; stream integrity was not tested."));
+            checks.Add(Probe("S5", "流完整性", "安全", "unknown", "high", 0, 0, "本次使用非流式请求，未检测 SSE 流完整性。"));
         }
 
         var matchScore = Math.Clamp(checks.Sum(x => x.ScoreImpact), 0, 100);
         var riskScore = Math.Clamp(100 - matchScore + checks.Sum(x => x.RiskImpact), 0, 100);
-        var status = checks.Any(x => x.Status == "fail" && x.Confidence == "high") ? "failed" : "succeeded";
+        var status = "succeeded";
         var riskLevel = riskScore >= 70 ? "high" : riskScore >= 30 ? "medium" : "low";
         var tokensPerSecond = CalculateTokensPerSecond(response.Usage?.OutputTokens, response.FullResponseMs);
 
@@ -328,93 +328,93 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
     {
         if (string.IsNullOrWhiteSpace(content))
         {
-            return Probe("D5", "内容完整性", "完整性", "fail", "high", 0, 25, "Model content is empty.");
+            return Probe("D5", "内容完整性", "完整性", "warn", "high", 0, 25, "模型返回内容为空，无法继续判断回答质量。");
         }
 
         if (content.Length < 8)
         {
-            return Probe("D5", "内容完整性", "完整性", "warn", "medium", 5, 8, "Model content is unusually short.");
+            return Probe("D5", "内容完整性", "完整性", "warn", "medium", 5, 8, "模型返回内容过短，可能是中转截断、降级响应或模型没有按要求输出。");
         }
 
-        return Probe("D5", "内容完整性", "完整性", "pass", "high", 10, 0, "Model returned non-empty content.");
+        return Probe("D5", "内容完整性", "完整性", "pass", "high", 10, 0, "模型返回了非空正文，可以继续检查内容和结构。");
     }
 
     private static SelfTestProbeResult BuildStructuredOutputProbe(string content)
     {
         return TryParseProbeJson(content, out _)
-            ? Probe("D7", "结构化输出", "能力", "pass", "high", 15, 0, "Strict JSON probe output parsed successfully.")
-            : Probe("D7", "结构化输出", "能力", "fail", "high", 0, 22, "Probe output is not strict JSON.");
+            ? Probe("D7", "结构化输出", "能力", "pass", "high", 15, 0, "模型按要求返回了可解析的严格 JSON。")
+            : Probe("D7", "结构化输出", "能力", "warn", "high", 0, 22, "模型没有按要求返回严格 JSON，可能影响自动化解析，但不代表接口请求失败。");
     }
 
     private static SelfTestProbeResult BuildKnowledgeProbe(string content)
     {
         if (!TryParseProbeJson(content, out var root))
         {
-            return Probe("D4", "知识能力", "能力", "unknown", "medium", 0, 0, "Knowledge answer could not be parsed because JSON output failed.");
+            return Probe("D4", "知识能力", "能力", "unknown", "medium", 0, 0, "由于结构化 JSON 解析失败，无法可靠读取知识题答案。");
         }
 
         var answer = TryGetString(root, "knowledge_answer").ToLowerInvariant();
         if (answer.Contains("9.8") || answer.Contains("9.80"))
         {
-            return Probe("D4", "知识能力", "能力", "pass", "high", 20, 0, "Deterministic numeric comparison answered correctly.");
+            return Probe("D4", "知识能力", "能力", "pass", "high", 20, 0, "确定性数字比较题回答正确。");
         }
 
         if (answer.Contains("9.11"))
         {
-            return Probe("D4", "知识能力", "能力", "fail", "high", 0, 30, "Deterministic numeric comparison answered incorrectly.");
+            return Probe("D4", "知识能力", "能力", "warn", "high", 0, 30, "确定性数字比较题回答错误，说明模型能力或响应内容存在异常。");
         }
 
-        return Probe("D4", "知识能力", "能力", "warn", "medium", 8, 8, "Knowledge answer was ambiguous.");
+        return Probe("D4", "知识能力", "能力", "warn", "medium", 8, 8, "知识题答案不够明确，无法给出满分判断。");
     }
 
     private static SelfTestProbeResult BuildLatencyProbe(int? firstTokenMs, int fullResponseMs)
     {
         if (firstTokenMs is null)
         {
-            return Probe("D8", "响应时延", "性能", "warn", "medium", 4, 8, $"First token was not measured; full response {fullResponseMs}ms.");
+            return Probe("D8", "响应时延", "性能", "warn", "medium", 4, 8, $"未测到首 token 时间，完整响应耗时 {fullResponseMs}ms。");
         }
 
         if (firstTokenMs <= 3000 && fullResponseMs <= 12000)
         {
-            return Probe("D8", "响应时延", "性能", "pass", "high", 10, 0, $"First token {firstTokenMs}ms; full response {fullResponseMs}ms.");
+            return Probe("D8", "响应时延", "性能", "pass", "high", 10, 0, $"响应速度正常：首 token {firstTokenMs}ms，完整响应 {fullResponseMs}ms。");
         }
 
         if (firstTokenMs <= 15000 && fullResponseMs <= 20000)
         {
-            return Probe("D8", "响应时延", "性能", "warn", "medium", 5, 8, $"Slow but completed; first token {firstTokenMs}ms; full response {fullResponseMs}ms.");
+            return Probe("D8", "响应时延", "性能", "warn", "medium", 5, 8, $"响应偏慢但已完成：首 token {firstTokenMs}ms，完整响应 {fullResponseMs}ms。");
         }
 
-        return Probe("D8", "响应时延", "性能", "warn", "high", 0, 20, $"Too slow; first token {firstTokenMs}ms; full response {fullResponseMs}ms.");
+        return Probe("D8", "响应时延", "性能", "warn", "high", 0, 20, $"响应明显偏慢：首 token {firstTokenMs}ms，完整响应 {fullResponseMs}ms。接口可用，但稳定性需要观察。");
     }
 
     private static SelfTestProbeResult BuildTokenProbe(TokenUsage? usage)
     {
         if (usage is null || usage.TotalTokens is null)
         {
-            return Probe("S1", "Token 注入", "安全", "unknown", "medium", 0, 0, "Usage tokens are missing; token injection cannot be verified.");
+            return Probe("S1", "Token 用量", "安全", "unknown", "medium", 0, 0, "响应中没有返回 token 用量，无法判断是否存在异常消耗。");
         }
 
         var totalTokens = usage.TotalTokens.Value;
         if (totalTokens > EstimatedTokenLimit * 1.2m)
         {
-            return Probe("S1", "Token 注入", "安全", "warn", "medium", 0, 18, $"Usage total_tokens={totalTokens}, significantly above estimated {EstimatedTokenLimit}.");
+            return Probe("S1", "Token 用量", "安全", "warn", "medium", 0, 18, $"本次返回 total_tokens={totalTokens}，高于预估 {EstimatedTokenLimit}，需要关注是否存在额外注入或计费异常。");
         }
 
-        return Probe("S1", "Token 注入", "安全", "pass", "medium", 0, 0, $"Usage total_tokens={totalTokens}; within expected range.");
+        return Probe("S1", "Token 用量", "安全", "pass", "medium", 0, 0, $"本次返回 total_tokens={totalTokens}，处于预估范围内。");
     }
 
     private static SelfTestProbeResult BuildIdentityProbe(string modelName, string content)
     {
         if (!TryParseProbeJson(content, out var root))
         {
-            return Probe("D3", "身份一致性", "身份", "unknown", "low", 0, 0, "Model claim is unavailable.");
+            return Probe("D3", "身份一致性", "身份", "unknown", "low", 0, 0, "没有读取到模型自述身份，不能据此判断是否冒充。");
         }
 
         var claim = TryGetString(root, "model_claim").ToLowerInvariant();
         var expectedFamily = GetExpectedModelFamily(modelName);
         if (string.IsNullOrWhiteSpace(claim) || expectedFamily == "unknown")
         {
-            return Probe("D3", "身份一致性", "身份", "unknown", "low", 0, 0, "Model claim is insufficient for identity matching.");
+            return Probe("D3", "身份一致性", "身份", "unknown", "low", 0, 0, "模型自述身份信息不足，或目标模型族无法识别，只作为低权重参考。");
         }
 
         var matched = claim.Contains(expectedFamily, StringComparison.OrdinalIgnoreCase) ||
@@ -430,7 +430,7 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             "low",
             0,
             matched ? 0 : 8,
-            matched ? $"Model claim roughly matches {expectedFamily} family." : $"Model claim does not clearly match requested family {expectedFamily}.");
+            matched ? $"模型自述身份与 {expectedFamily} 模型族基本一致。" : $"模型自述身份没有明确匹配请求的 {expectedFamily} 模型族。");
     }
 
     private static SelfTestProbeResult BuildUpstreamFingerprintProbe(HttpResponseMessage response)
@@ -440,12 +440,12 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         var hasServerHeader = !string.IsNullOrWhiteSpace(server);
         var hasContentType = !contentType.Equals("unknown", StringComparison.OrdinalIgnoreCase);
         var evidence = hasServerHeader
-            ? $"Captured weak upstream fingerprint: content-type={contentType}; server header present."
-            : $"Captured weak upstream fingerprint: content-type={contentType}; no server header.";
+            ? $"已捕获弱指纹：content-type={contentType}，响应包含 server 头。该项只能作为辅助信息，不能单独证明上游身份。"
+            : $"已捕获弱指纹：content-type={contentType}，响应未暴露 server 头。该项只能作为辅助信息，不能单独证明上游身份。";
 
         return hasServerHeader || hasContentType
             ? Probe("D6", "上游指纹", "信息", "pass", "low", 3, 0, evidence)
-            : Probe("D6", "上游指纹", "信息", "unknown", "low", 0, 0, "No response header fingerprint was available.");
+            : Probe("D6", "上游指纹", "信息", "unknown", "low", 0, 0, "响应头没有可用指纹信息，因此不参与判断。");
     }
 
     private static SelfTestExecutionResult FromHttpFailure(HttpStatusCode statusCode, int firstTokenMs, int fullResponseMs, HttpResponseMessage response)
@@ -454,9 +454,9 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         var isAuthFailure = statusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden;
         var checks = new List<SelfTestProbeResult>
         {
-            Probe("D1", "协议连通性", "协议", "fail", "high", 0, isAuthFailure ? 18 : 35, $"Relay returned HTTP {numericStatus}."),
-            Probe("D2", "响应结构", "协议", "unknown", "medium", 0, 0, "No successful model response to inspect."),
-            Probe("S4", "错误响应泄露", "安全", "unknown", "low", 0, 0, "Error body is not persisted or exposed.")
+            Probe("D1", "协议连通性", "协议", "fail", "high", 0, isAuthFailure ? 18 : 35, $"中转返回 HTTP {numericStatus}，真实请求未通过。"),
+            Probe("D2", "响应结构", "协议", "unknown", "medium", 0, 0, "没有成功响应可检查结构。"),
+            Probe("S4", "错误响应泄露", "安全", "unknown", "low", 0, 0, "错误正文不会保存或展示，只记录 HTTP 状态和摘要。")
         };
 
         var riskScore = isAuthFailure ? 35 : 65;
@@ -468,8 +468,8 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             RiskScore = riskScore,
             RiskLevel = isAuthFailure ? "medium" : "high",
             ResultSummary = isAuthFailure
-                ? $"Relay returned {numericStatus}. Check API Key, model permission, or account balance."
-                : $"Relay returned HTTP {numericStatus}. The request chain did not pass.",
+                ? $"中转返回 {numericStatus}。请检查 API Key、模型权限或账户余额。"
+                : $"中转返回 HTTP {numericStatus}，请求链路未通过。",
             MatchScore = 0,
             EstimatedTokens = EstimatedTokenLimit,
             Checks = checks
@@ -500,14 +500,35 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
     {
         var failed = checks.Where(x => x.Status == "fail").Select(x => x.Code).ToArray();
         var warned = checks.Where(x => x.Status == "warn").Select(x => x.Code).ToArray();
-        if (status == "succeeded" && failed.Length == 0)
+        if (status == "succeeded")
         {
-            return warned.Length == 0
-                ? $"真实请求完成，P0 探针通过，匹配度 {matchScore:0.#}。API Key 未落库，自助测试不进入公共排行。"
-                : $"真实请求完成，匹配度 {matchScore:0.#}，存在可疑项：{string.Join(", ", warned)}。";
+            var attentionCodes = failed.Concat(warned).Distinct().ToArray();
+            return attentionCodes.Length == 0
+                ? $"真实请求已完成，综合得分 {matchScore:0.#}。API Key 未落库，自助测试不进入公共排行。"
+                : $"真实请求已完成，综合得分 {matchScore:0.#}。需要人工关注的检测项：{string.Join(", ", attentionCodes)}。这些项目会影响分数和可信度，但不代表接口请求失败。";
         }
 
-        return $"真实请求完成但关键探针未通过，匹配度 {matchScore:0.#}，失败项：{string.Join(", ", failed)}。";
+        return failed.Length == 0
+            ? $"请求未完成，综合得分 {matchScore:0.#}。"
+            : $"请求未完成，综合得分 {matchScore:0.#}，失败项：{string.Join(", ", failed)}。";
+    }
+
+    private static string BuildResponseShapeEvidence(string apiType, bool isValid, bool isStream)
+    {
+        if (apiType == "anthropic")
+        {
+            return isValid
+                ? isStream
+                    ? "Anthropic Messages 流式响应结构有效：检测到 SSE 事件和文本增量。这里检查的是 Claude/Anthropic 协议，不是 OpenAI choices。"
+                    : "Anthropic Messages 响应结构有效：检测到 content 数组和文本内容。这里检查的是 Claude/Anthropic 协议，不是 OpenAI choices。"
+                : "Anthropic Messages 响应结构不完整：未检测到预期的 content 数组、文本内容或流式事件。";
+        }
+
+        return isValid
+            ? isStream
+                ? "OpenAI Chat Completions 流式响应结构有效：检测到 choices/delta 数据片段。"
+                : "OpenAI Chat Completions 响应结构有效：检测到 choices/message/content。"
+            : "OpenAI Chat Completions 响应结构不完整：未检测到 choices/message/delta。";
     }
 
     private static decimal? CalculateTokensPerSecond(int? outputTokens, int fullResponseMs)
@@ -551,7 +572,7 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         if (!Uri.TryCreate(rawUrl.Trim(), UriKind.Absolute, out var uri) ||
             uri.Scheme is not ("http" or "https"))
         {
-            error = "Relay URL must be a full http or https URL.";
+            error = "中转地址必须是完整的 http 或 https URL。";
             return false;
         }
 
