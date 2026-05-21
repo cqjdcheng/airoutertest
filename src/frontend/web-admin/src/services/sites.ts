@@ -42,6 +42,8 @@ export type RelaySiteOffer = {
   sourceType?: string;
   status?: string;
   autoTestEnabled?: boolean;
+  hasTestApiKey?: boolean;
+  testApiKey?: string;
   crawledAt?: string;
   reviewedAt?: string;
 };

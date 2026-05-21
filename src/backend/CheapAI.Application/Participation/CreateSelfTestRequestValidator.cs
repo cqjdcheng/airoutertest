@@ -13,6 +13,10 @@ public sealed class CreateSelfTestRequestValidator : AbstractValidator<CreateSel
             .WithMessage("SiteUrl must be a valid http or https URL.");
         RuleFor(x => x.ModelName).NotEmpty().MaximumLength(128);
         RuleFor(x => x.ApiKey).NotEmpty().MaximumLength(2048);
+        RuleFor(x => x.ApiType)
+            .NotEmpty()
+            .Must(value => value is "openai" or "anthropic")
+            .WithMessage("ApiType must be openai or anthropic.");
         RuleFor(x => x.TestMode).NotEmpty().MaximumLength(32);
         RuleFor(x => x.ChallengeId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.ChallengeAnswer).NotEmpty().MaximumLength(2048);

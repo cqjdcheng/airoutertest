@@ -73,7 +73,9 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
                 SupportsInvoice = x.SupportsInvoice,
                 HasDocs = x.HasDocs,
                 AutoTestEnabled = x.AutoTestEnabled,
-                HasTestApiKey = x.TestApiKey != null && x.TestApiKey != "",
+                HasTestApiKey = SqlFunc.Subqueryable<RelayOfferEntity>()
+                    .Where(offer => offer.SiteId == x.Id && offer.Status != "archived" && offer.TestApiKey != null && offer.TestApiKey != "")
+                    .Any(),
                 TestIntervalMinutes = x.TestIntervalMinutes,
                 LastAutoTestAt = x.LastAutoTestAt,
                 CreatedAtUtc = x.CreatedAt
@@ -229,6 +231,7 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
                 SourceType = offer.SourceType,
                 Status = offer.Status,
                 AutoTestEnabled = offer.AutoTestEnabled,
+                HasTestApiKey = offer.TestApiKey != null && offer.TestApiKey != "",
                 CrawledAt = offer.CrawledAt,
                 ReviewedAt = offer.ReviewedAt
             })
@@ -272,6 +275,15 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
             var modelId = await ResolveModelIdAsync(offer, cancellationToken);
             var now = DateTime.UtcNow;
             var rechargeRatio = offer.RechargeRatio <= 0 ? 1 : offer.RechargeRatio;
+            var existing = await db.Queryable<RelayOfferEntity>()
+                .FirstAsync(x =>
+                    x.SiteId == siteId &&
+                    x.ModelId == modelId &&
+                    x.SourceType == (string.IsNullOrWhiteSpace(offer.SourceType) ? "manual" : offer.SourceType.Trim()),
+                    cancellationToken);
+            var nextTestApiKey = string.IsNullOrWhiteSpace(offer.TestApiKey)
+                ? existing?.TestApiKey
+                : offer.TestApiKey.Trim();
             var entity = new RelayOfferEntity
             {
                 SiteId = siteId,
@@ -288,17 +300,11 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
                 EffectiveOutputPriceUsd = CalculateEffective(offer.SiteOutputPriceUsd, rechargeRatio, offer.BonusRatio),
                 Status = string.IsNullOrWhiteSpace(offer.Status) ? "active" : offer.Status,
                 AutoTestEnabled = offer.AutoTestEnabled,
+                TestApiKey = nextTestApiKey,
                 ReviewedAt = now,
                 CreatedAt = now,
                 UpdatedAt = now
             };
-
-            var existing = await db.Queryable<RelayOfferEntity>()
-                .FirstAsync(x =>
-                    x.SiteId == siteId &&
-                    x.ModelId == modelId &&
-                    x.SourceType == entity.SourceType,
-                    cancellationToken);
 
             if (existing is null)
             {
@@ -461,7 +467,7 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
             InviteUrl = entity.InviteUrl,
             RecentReview = entity.RecentReview,
             AutoTestEnabled = entity.AutoTestEnabled,
-            HasTestApiKey = !string.IsNullOrWhiteSpace(entity.TestApiKey),
+            HasTestApiKey = offers.Any(x => x.HasTestApiKey),
             TestIntervalMinutes = entity.TestIntervalMinutes,
             LastAutoTestAt = entity.LastAutoTestAt,
             CreatedAtUtc = entity.CreatedAt,

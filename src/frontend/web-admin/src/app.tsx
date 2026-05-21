@@ -13,6 +13,7 @@ import {
 } from "@/services/api";
 
 const LOGIN_PATH = "/login";
+const GTM_ID = "GTM-MHRD6T3J";
 
 function isPublicRoute(pathname: string) {
   return pathname === LOGIN_PATH;
@@ -101,6 +102,19 @@ function HeaderAccount({
   );
 }
 
+function GoogleTagManagerNoScript() {
+  return (
+    <noscript>
+      <iframe
+        src={`https://www.googletagmanager.com/ns.html?id=${GTM_ID}`}
+        height="0"
+        width="0"
+        style={{ display: "none", visibility: "hidden" }}
+      />
+    </noscript>
+  );
+}
+
 type LayoutRuntimeProps = {
   initialState?: { currentAdmin: AdminProfile | null };
   loading: boolean;
@@ -149,13 +163,17 @@ export const layout = ({ initialState, loading, setInitialState }: LayoutRuntime
           登录
         </Button>
       ),
-    childrenRender: (dom: ReactNode) =>
-      loading ? (
-        <div className="cheapai-admin-loading">
-          <Spin size="large" />
-        </div>
-      ) : (
-        dom
-      )
+    childrenRender: (dom: ReactNode) => (
+      <>
+        <GoogleTagManagerNoScript />
+        {loading ? (
+          <div className="cheapai-admin-loading">
+            <Spin size="large" />
+          </div>
+        ) : (
+          dom
+        )}
+      </>
+    )
   };
 };

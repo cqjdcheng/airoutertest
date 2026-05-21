@@ -33,6 +33,8 @@ public sealed class RelaySiteOfferUpsertRequest
     public string Status { get; init; } = "active";
 
     public bool AutoTestEnabled { get; init; }
+
+    public string? TestApiKey { get; init; }
 }
 
 public sealed class RelaySiteOfferResponse
@@ -74,6 +76,8 @@ public sealed class RelaySiteOfferResponse
     public string Status { get; init; } = "active";
 
     public bool AutoTestEnabled { get; init; }
+
+    public bool HasTestApiKey { get; init; }
 
     public DateTime? CrawledAt { get; init; }
 

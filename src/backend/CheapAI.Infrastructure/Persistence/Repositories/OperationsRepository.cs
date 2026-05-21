@@ -316,6 +316,7 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
                         EffectiveOutputPriceUsd = item.EffectiveOutputPriceUsd ?? CalculateEffective(siteOutput, item.RechargeRatio, item.BonusRatio),
                         Status = string.IsNullOrWhiteSpace(item.Status) ? "active" : item.Status,
                         AutoTestEnabled = existing?.AutoTestEnabled ?? false,
+                        TestApiKey = existing?.TestApiKey,
                         CrawledAt = now,
                         CreatedAt = existing?.CreatedAt ?? now,
                         UpdatedAt = now
@@ -367,9 +368,9 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
                 site.Status == "active" &&
                 site.DeletedAt == null &&
                 site.AutoTestEnabled &&
-                site.TestApiKey != null &&
-                site.TestApiKey != "" &&
                 offer.AutoTestEnabled &&
+                offer.TestApiKey != null &&
+                offer.TestApiKey != "" &&
                 model.DeletedAt == null)
             .Select((offer, site, model) => new PlatformTestOfferRow
             {
@@ -378,14 +379,15 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
                 ChannelId = offer.ChannelId,
                 SiteUrl = site.BaseUrl,
                 SiteName = site.Name,
-                TestApiKey = site.TestApiKey!,
+                TestApiKey = offer.TestApiKey!,
                 TestIntervalMinutes = site.TestIntervalMinutes,
                 LastAutoTestAt = site.LastAutoTestAt,
                 OfferId = offer.Id,
                 ModelSlug = model.Slug,
                 ModelName = model.DisplayName,
                 RequestName = model.RequestName,
-                OfficialModelId = model.OfficialModelId
+                OfficialModelId = model.OfficialModelId,
+                ApiType = model.ApiType
             })
             .ToListAsync(cancellationToken);
 
@@ -399,6 +401,7 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
                 SiteUrl = offer.SiteUrl,
                 ModelName = FirstNonEmpty(offer.RequestName, offer.OfficialModelId, offer.ModelName, offer.ModelSlug),
                 ApiKey = offer.TestApiKey,
+                ApiType = NormalizeCrawledApiType(offer.ApiType, offer.RequestName),
                 IsStream = true,
                 TestMode = "comprehensive"
             };
@@ -980,5 +983,7 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
         public string RequestName { get; init; } = string.Empty;
 
         public string OfficialModelId { get; init; } = string.Empty;
+
+        public string ApiType { get; init; } = "openai";
     }
 }

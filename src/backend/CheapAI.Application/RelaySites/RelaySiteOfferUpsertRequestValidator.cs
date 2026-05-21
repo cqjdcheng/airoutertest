@@ -14,6 +14,7 @@ public sealed class RelaySiteOfferUpsertRequestValidator : AbstractValidator<Rel
         RuleFor(x => x.RequestName).MaximumLength(128);
         RuleFor(x => x.ApiType).MaximumLength(32);
         RuleFor(x => x.DisplayName).MaximumLength(128);
+        RuleFor(x => x.TestApiKey).MaximumLength(2048);
         RuleFor(x => x.SourceType).NotEmpty().MaximumLength(24);
         RuleFor(x => x.Status)
             .Must(status => AllowedStatuses.Contains(status))

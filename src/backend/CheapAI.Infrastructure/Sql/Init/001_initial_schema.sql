@@ -152,6 +152,7 @@ CREATE TABLE IF NOT EXISTS relay_offers (
   effective_output_price_usd DECIMAL(18, 6) NULL,
   status VARCHAR(24) NOT NULL DEFAULT 'active',
   auto_test_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  test_api_key TEXT NULL,
   crawled_at DATETIME(3) NULL,
   reviewed_at DATETIME(3) NULL,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),

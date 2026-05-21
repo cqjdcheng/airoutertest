@@ -110,6 +110,7 @@ export function RelayTestPanel({
 
   const targetModel = customModel.trim() || selectedModel.requestName || selectedModel.slug;
   const targetModelLabel = customModel.trim() || selectedModel.label;
+  const targetApiType = inferApiType(customModel.trim(), selectedModel.apiType);
 
   useEffect(() => {
     setHistoryItems(readSelfTestHistory());
@@ -174,6 +175,7 @@ export function RelayTestPanel({
       siteUrl,
       modelName: targetModel,
       apiKey,
+      apiType: targetApiType,
       isStream,
       testMode: "comprehensive",
       challengeId: challenge.id,
@@ -450,6 +452,14 @@ export function RelayTestPanel({
       ) : null}
     </div>
   );
+}
+
+function inferApiType(modelName: string, selectedApiType?: "openai" | "anthropic") {
+  if (modelName) {
+    return /claude|anthropic/i.test(modelName) ? "anthropic" : "openai";
+  }
+
+  return selectedApiType ?? "openai";
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

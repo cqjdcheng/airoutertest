@@ -10,7 +10,7 @@ import {
 import { Alert, Button, Empty, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Tag, message } from "antd";
 import AuthGuard from "@/components/AuthGuard";
 import AdminPage from "@/components/AdminPage";
-import { fetchModels, previewModelImport, type ModelListItem } from "@/services/models";
+import { fetchModels, previewModelImport, type ModelImportPreviewItem, type ModelListItem } from "@/services/models";
 import {
   createSite,
   deleteSite,
@@ -49,6 +49,11 @@ type SiteFormValues = {
 
 type OfferTableRow = RelaySiteOffer & {
   rowIndex: number;
+};
+
+type OfferImportPreviewRow = RelaySiteOffer & {
+  previewKey: string;
+  importSource: "model" | "pricing";
 };
 
 const defaultSiteValues: SiteFormValues = {
@@ -119,9 +124,38 @@ function normalizeOffers(offers: RelaySiteOffer[] | undefined, models: ModelList
       bonusRatio,
       sourceType: offer.sourceType || "manual",
       status: offer.status || "active",
-      autoTestEnabled: Boolean(offer.autoTestEnabled)
+      autoTestEnabled: Boolean(offer.autoTestEnabled),
+      testApiKey: offer.testApiKey?.trim() || undefined
     };
     });
+}
+
+function normalizeOfferIdentity(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function getOfferIdentityValues(offer: RelaySiteOffer) {
+  return [
+    offer.modelId ? `model:${offer.modelId}` : "",
+    offer.modelSlug ? `slug:${normalizeOfferIdentity(offer.modelSlug)}` : "",
+    offer.officialModelId ? `name:${normalizeOfferIdentity(offer.officialModelId)}` : "",
+    offer.requestName ? `name:${normalizeOfferIdentity(offer.requestName)}` : "",
+    offer.displayName ? `name:${normalizeOfferIdentity(offer.displayName)}` : ""
+  ].filter(Boolean);
+}
+
+function isSameOfferModel(left: RelaySiteOffer, right: RelaySiteOffer) {
+  const leftValues = new Set(getOfferIdentityValues(left));
+  return getOfferIdentityValues(right).some((value) => leftValues.has(value));
+}
+
+function stripPreviewFields(row: OfferImportPreviewRow): RelaySiteOffer {
+  const { previewKey: _previewKey, importSource: _importSource, ...offer } = row;
+  return offer;
+}
+
+function buildOfferPreviewKey(source: string, offer: RelaySiteOffer, index: number) {
+  return `${source}:${offer.modelId ?? offer.modelSlug ?? offer.requestName ?? offer.officialModelId ?? offer.displayName ?? index}:${index}`;
 }
 
 function OfficialPriceHint({ form, models }: { form: ReturnType<typeof Form.useForm<RelaySiteOffer>>[0]; models: ModelListItem[] }) {
@@ -149,6 +183,10 @@ export default function SitesPage() {
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [modelImporting, setModelImporting] = useState(false);
   const [pricingImporting, setPricingImporting] = useState(false);
+  const [offerImportOpen, setOfferImportOpen] = useState(false);
+  const [offerImportTitle, setOfferImportTitle] = useState("抓取模型预览");
+  const [offerImportRows, setOfferImportRows] = useState<OfferImportPreviewRow[]>([]);
+  const [selectedImportOfferKeys, setSelectedImportOfferKeys] = useState<Key[]>([]);
   const [editing, setEditing] = useState<RelaySiteDetail | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -287,6 +325,9 @@ export default function SitesPage() {
     setEditing(null);
     setOfferModalOpen(false);
     setEditingOfferIndex(null);
+    setOfferImportOpen(false);
+    setOfferImportRows([]);
+    setSelectedImportOfferKeys([]);
     setSelectedOfferRows([]);
     setSiteOffers([]);
   }
@@ -314,7 +355,6 @@ export default function SitesPage() {
         inviteUrl: values.inviteUrl,
         recentReview: values.recentReview,
         autoTestEnabled: Boolean(values.autoTestEnabled),
-        testApiKey: values.testApiKey,
         testIntervalMinutes: toNumber(values.testIntervalMinutes) ?? 60,
         supportsRefund: Boolean(values.supportsRefund),
         supportsInvoice: Boolean(values.supportsInvoice),
@@ -391,25 +431,32 @@ export default function SitesPage() {
         vendor: importVendor,
         apiKey: importApiKey || undefined
       });
-      setSiteOffers(rows.map((row) => ({
-          vendor: row.vendor || importVendor,
-          officialModelId: row.officialModelId,
-          requestName: row.requestName,
-          apiType: row.apiType,
-          displayName: row.displayName,
-          siteInputPriceUsd: row.officialInputPriceUsd,
-          siteOutputPriceUsd: row.officialOutputPriceUsd,
-          sourceType: "manual",
-          status: "active",
-          autoTestEnabled: false
-        })));
-      setSelectedOfferRows([]);
+      openOfferImportPreview(
+        "从 Base URL 抓取模型",
+        rows.map(mapModelImportRowToOffer),
+        "model"
+      );
       message.success(`已抓取 ${rows.length} 个模型`);
     } catch (requestError) {
       message.error((requestError as Error).message);
     } finally {
       setModelImporting(false);
     }
+  }
+
+  function mapModelImportRowToOffer(row: ModelImportPreviewItem): RelaySiteOffer {
+    return {
+      vendor: row.vendor || importVendor,
+      officialModelId: row.officialModelId,
+      requestName: row.requestName,
+      apiType: row.apiType,
+      displayName: row.displayName,
+      siteInputPriceUsd: row.officialInputPriceUsd,
+      siteOutputPriceUsd: row.officialOutputPriceUsd,
+      sourceType: "manual",
+      status: "active",
+      autoTestEnabled: false
+    };
   }
 
   function findMatchingModel(row: RelayPricingPreviewItem) {
@@ -472,14 +519,71 @@ export default function SitesPage() {
         rateBaseline: pricingRateBaseline,
         groupId: pricingGroupId || undefined
       });
-      setSiteOffers(rows.map(mapPricingRowToOffer));
-      setSelectedOfferRows([]);
+      openOfferImportPreview("按 one-tracker 抓取价格", rows.map(mapPricingRowToOffer), "pricing");
       message.success(`已抓取 ${rows.length} 个模型价格`);
     } catch (requestError) {
       message.error((requestError as Error).message);
     } finally {
       setPricingImporting(false);
     }
+  }
+
+  function openOfferImportPreview(title: string, offers: RelaySiteOffer[], importSource: OfferImportPreviewRow["importSource"]) {
+    const rows = offers.map((offer, index) => ({
+      ...offer,
+      previewKey: buildOfferPreviewKey(importSource, offer, index),
+      importSource
+    }));
+
+    setOfferImportTitle(title);
+    setOfferImportRows(rows);
+    setSelectedImportOfferKeys(rows.map((row) => row.previewKey));
+    setOfferImportOpen(true);
+  }
+
+  function saveSelectedImportedOffers() {
+    const selectedKeys = new Set(selectedImportOfferKeys);
+    const selectedRows = offerImportRows.filter((row) => selectedKeys.has(row.previewKey));
+
+    if (!selectedRows.length) {
+      message.warning("请选择要保存的模型");
+      return;
+    }
+
+    let replacedCount = 0;
+    let createdCount = 0;
+    setSiteOffers((current) => {
+      const next = [...current];
+
+      selectedRows.forEach((row) => {
+        const incoming = stripPreviewFields(row);
+        const existingIndex = next.findIndex((offer) => isSameOfferModel(offer, incoming));
+
+        if (existingIndex >= 0) {
+          const existing = next[existingIndex];
+          next[existingIndex] = {
+            ...existing,
+            ...incoming,
+            autoTestEnabled: existing.autoTestEnabled ?? incoming.autoTestEnabled,
+            testApiKey: existing.testApiKey,
+            hasTestApiKey: existing.hasTestApiKey
+          };
+          replacedCount += 1;
+          return;
+        }
+
+        next.push(incoming);
+        createdCount += 1;
+      });
+
+      return next;
+    });
+
+    setSelectedOfferRows([]);
+    setOfferImportOpen(false);
+    setOfferImportRows([]);
+    setSelectedImportOfferKeys([]);
+    message.success(`已保存 ${selectedRows.length} 个模型，新增 ${createdCount} 个，替换 ${replacedCount} 个`);
   }
 
   function applyModelToOfferForm(modelId: number) {
@@ -545,7 +649,9 @@ export default function SitesPage() {
       apiType: values.apiType || "openai",
       sourceType: values.sourceType || "manual",
       status: values.status || "active",
-      autoTestEnabled: Boolean(values.autoTestEnabled)
+      autoTestEnabled: Boolean(values.autoTestEnabled),
+      testApiKey: values.testApiKey?.trim() || undefined,
+      hasTestApiKey: Boolean(values.testApiKey?.trim() || values.hasTestApiKey)
     };
 
     if (editingOfferIndex === null) {
@@ -728,11 +834,6 @@ export default function SitesPage() {
                   fieldProps={{ type: "number", min: 15, step: 15 }}
                   rules={[{ required: true, message: "请输入测试间隔" }]}
                 />
-                <ProFormText.Password
-                  name="testApiKey"
-                  label={editing?.hasTestApiKey ? "测试 Key（已保存，留空不变）" : "测试 Key"}
-                  fieldProps={{ autoComplete: "new-password" }}
-                />
               </Space>
               <Space wrap>
                 <ProFormText
@@ -895,6 +996,12 @@ export default function SitesPage() {
                             render: (enabled?: boolean) => <Tag color={enabled ? "purple" : "default"}>{enabled ? "参与" : "关闭"}</Tag>
                           },
                           {
+                            title: "测试 Key",
+                            dataIndex: "hasTestApiKey",
+                            width: 100,
+                            render: (hasKey?: boolean) => <Tag color={hasKey ? "green" : "orange"}>{hasKey ? "已配置" : "未配置"}</Tag>
+                          },
+                          {
                             title: "操作",
                             width: 150,
                             render: (_, record) => (
@@ -972,6 +1079,15 @@ export default function SitesPage() {
                     <Switch />
                   </Form.Item>
                 </Space>
+                <Form.Item
+                  name="testApiKey"
+                  label={offerForm.getFieldValue("hasTestApiKey") ? "模型测试 Key（已保存，留空不变）" : "模型测试 Key"}
+                >
+                  <Input.Password autoComplete="new-password" placeholder="仅用于该模型自动测试，不会展示明文" />
+                </Form.Item>
+                <Form.Item name="hasTestApiKey" hidden>
+                  <Input />
+                </Form.Item>
                 <Form.Item name="modelSlug" hidden>
                   <Input />
                 </Form.Item>
@@ -988,6 +1104,82 @@ export default function SitesPage() {
                   <Input />
                 </Form.Item>
               </Form>
+            </Modal>
+            <Modal
+              open={offerImportOpen}
+              title={offerImportTitle}
+              width={1080}
+              maskClosable={false}
+              onCancel={() => {
+                setOfferImportOpen(false);
+                setOfferImportRows([]);
+                setSelectedImportOfferKeys([]);
+              }}
+              onOk={saveSelectedImportedOffers}
+              okText="保存选中模型"
+              cancelText="取消"
+            >
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message={`已抓取 ${offerImportRows.length} 个模型。保存时同名模型会替换当前列表中的旧数据，未选中的模型不会写入。`}
+              />
+              <Table<OfferImportPreviewRow>
+                rowKey="previewKey"
+                dataSource={offerImportRows}
+                pagination={{ pageSize: 10, showSizeChanger: false }}
+                scroll={{ x: 920, y: 420 }}
+                rowSelection={{
+                  selectedRowKeys: selectedImportOfferKeys,
+                  onChange: setSelectedImportOfferKeys
+                }}
+                columns={[
+                  {
+                    title: "模型",
+                    dataIndex: "displayName",
+                    render: (_, record) => (
+                      <div>
+                        <strong>{record.displayName || record.requestName || record.officialModelId || "-"}</strong>
+                        <div style={{ color: "var(--cheapai-admin-muted)", fontSize: 12 }}>{record.requestName || record.officialModelId || "-"}</div>
+                      </div>
+                    )
+                  },
+                  {
+                    title: "接口",
+                    dataIndex: "apiType",
+                    width: 100,
+                    render: (value?: string) => <Tag>{value || "openai"}</Tag>
+                  },
+                  {
+                    title: "输入价格",
+                    dataIndex: "siteInputPriceUsd",
+                    width: 130,
+                    render: (value?: number) => value ?? "-"
+                  },
+                  {
+                    title: "输出价格",
+                    dataIndex: "siteOutputPriceUsd",
+                    width: 130,
+                    render: (value?: number) => value ?? "-"
+                  },
+                  {
+                    title: "来源",
+                    dataIndex: "sourceType",
+                    width: 100,
+                    render: (value?: string) => value === "crawl" ? "抓取" : "模型列表"
+                  },
+                  {
+                    title: "保存动作",
+                    width: 110,
+                    render: (_, record) => (
+                      siteOffers.some((offer) => isSameOfferModel(offer, record))
+                        ? <Tag color="orange">替换</Tag>
+                        : <Tag color="green">新增</Tag>
+                    )
+                  }
+                ]}
+              />
             </Modal>
           </Modal>
         ) : null}

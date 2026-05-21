@@ -13,12 +13,13 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly HttpClient HttpClient = new()
     {
-        Timeout = TimeSpan.FromSeconds(18)
+        Timeout = TimeSpan.FromSeconds(45)
     };
 
     public async Task<SelfTestExecutionResult> ExecuteAsync(CreateSelfTestRequest request, CancellationToken cancellationToken = default)
     {
-        if (!TryBuildChatCompletionsEndpoint(request.SiteUrl, out var endpoint, out var error))
+        var apiType = NormalizeApiType(request.ApiType, request.ModelName);
+        if (!TryBuildEndpoint(request.SiteUrl, apiType, out var endpoint, out var error))
         {
             return Failed(75, "high", error, [
                 Probe("D1", "协议连通性", "协议", "fail", "high", 0, 40, error)
@@ -47,11 +48,11 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         }
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(TimeSpan.FromSeconds(20));
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(45));
 
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint);
-        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", request.ApiKey);
-        httpRequest.Content = new StringContent(JsonSerializer.Serialize(BuildProbePayload(request), JsonOptions), Encoding.UTF8, "application/json");
+        ApplyAuthHeaders(httpRequest, apiType, request.ApiKey);
+        httpRequest.Content = new StringContent(JsonSerializer.Serialize(BuildProbePayload(request, apiType), JsonOptions), Encoding.UTF8, "application/json");
 
         var stopwatch = Stopwatch.StartNew();
         try
@@ -66,16 +67,16 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             }
 
             var probeResponse = request.IsStream
-                ? await ReadStreamingResponseAsync(response, stopwatch, responseHeaderMs, timeoutCts.Token)
-                : await ReadJsonResponseAsync(response, stopwatch, responseHeaderMs, timeoutCts.Token);
+                ? await ReadStreamingResponseAsync(response, apiType, stopwatch, responseHeaderMs, timeoutCts.Token)
+                : await ReadJsonResponseAsync(response, apiType, stopwatch, responseHeaderMs, timeoutCts.Token);
 
-            return EvaluateProbeResponse(request, endpoint, response, probeResponse);
+            return EvaluateProbeResponse(request, apiType, endpoint, response, probeResponse);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             stopwatch.Stop();
             return Failed(55, "medium", "The request timed out. The relay may be unreachable, slow, or unstable.", [
-                Probe("D1", "协议连通性", "协议", "fail", "high", 0, 30, "Request timeout after 20 seconds."),
+                Probe("D1", "协议连通性", "协议", "fail", "high", 0, 30, "Request timeout after 45 seconds."),
                 Probe("D8", "响应时延", "性能", "fail", "high", 0, 25, "Full response exceeded timeout.")
             ], fullResponseMs: (int)Math.Min(stopwatch.ElapsedMilliseconds, int.MaxValue));
         }
@@ -97,17 +98,10 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         }
     }
 
-    private static Dictionary<string, object?> BuildProbePayload(CreateSelfTestRequest request)
+    private static Dictionary<string, object?> BuildProbePayload(CreateSelfTestRequest request, string apiType)
     {
-        var payload = new Dictionary<string, object?>
-        {
-            ["model"] = request.ModelName,
-            ["messages"] = new object[]
-            {
-                new
-                {
-                    role = "user",
-                    content = """
+        var modelName = NormalizeModelNameForApi(request.ModelName, apiType);
+        var prompt = """
                     CheapAI relay verification probe. Return strict JSON only, without Markdown fences:
                     {
                       "model_claim": "the model identity you claim",
@@ -116,7 +110,36 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
                       "format_ack": "json-ok",
                       "short_answer": "OK"
                     }
-                    """
+                    """;
+
+        if (apiType == "anthropic")
+        {
+            return new Dictionary<string, object?>
+            {
+                ["model"] = modelName,
+                ["messages"] = new object[]
+                {
+                    new
+                    {
+                        role = "user",
+                        content = prompt
+                    }
+                },
+                ["temperature"] = 0,
+                ["max_tokens"] = 260,
+                ["stream"] = request.IsStream
+            };
+        }
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["model"] = modelName,
+            ["messages"] = new object[]
+            {
+                new
+                {
+                    role = "user",
+                    content = prompt
                 }
             },
             ["temperature"] = 0,
@@ -134,6 +157,7 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
 
     private static async Task<ProbeResponse> ReadJsonResponseAsync(
         HttpResponseMessage response,
+        string apiType,
         Stopwatch stopwatch,
         int responseHeaderMs,
         CancellationToken cancellationToken)
@@ -143,15 +167,15 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
 
         using var document = JsonDocument.Parse(body);
         var root = document.RootElement.Clone();
-        var content = ExtractMessageContent(root);
-        var usage = ExtractUsage(root);
+        var content = ExtractMessageContent(root, apiType);
+        var usage = ExtractUsage(root, apiType);
 
         return new ProbeResponse(
             responseHeaderMs,
             (int)Math.Min(stopwatch.ElapsedMilliseconds, int.MaxValue),
             content,
             usage,
-            OpenAiShapeValid: LooksLikeOpenAiChatCompletion(root),
+            OpenAiShapeValid: LooksLikeSuccessResponse(root, apiType),
             StreamIntegrityValid: null,
             StreamChunkCount: null,
             StreamDoneSeen: null);
@@ -159,6 +183,7 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
 
     private static async Task<ProbeResponse> ReadStreamingResponseAsync(
         HttpResponseMessage response,
+        string apiType,
         Stopwatch stopwatch,
         int responseHeaderMs,
         CancellationToken cancellationToken)
@@ -196,20 +221,28 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
 
             using var document = JsonDocument.Parse(data);
             var root = document.RootElement.Clone();
-            if (!LooksLikeOpenAiStreamDelta(root))
+            if (apiType == "anthropic" &&
+                root.TryGetProperty("type", out var eventType) &&
+                eventType.ValueKind == JsonValueKind.String &&
+                eventType.GetString()?.Equals("message_stop", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                doneSeen = true;
+            }
+
+            if (!LooksLikeStreamDelta(root, apiType))
             {
                 shapeValid = false;
                 continue;
             }
 
-            var delta = ExtractDeltaContent(root);
+            var delta = ExtractDeltaContent(root, apiType);
             if (!string.IsNullOrEmpty(delta))
             {
                 firstTokenMs ??= (int)Math.Min(stopwatch.ElapsedMilliseconds, int.MaxValue);
                 contentBuilder.Append(delta);
             }
 
-            usage ??= ExtractUsage(root);
+            usage = MergeUsage(usage, ExtractUsage(root, apiType));
             chunkCount++;
         }
 
@@ -229,6 +262,7 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
 
     private static SelfTestExecutionResult EvaluateProbeResponse(
         CreateSelfTestRequest request,
+        string apiType,
         Uri endpoint,
         HttpResponseMessage httpResponse,
         ProbeResponse response)
@@ -350,7 +384,7 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             return Probe("D8", "响应时延", "性能", "warn", "medium", 5, 8, $"Slow but completed; first token {firstTokenMs}ms; full response {fullResponseMs}ms.");
         }
 
-        return Probe("D8", "响应时延", "性能", "fail", "high", 0, 20, $"Too slow; first token {firstTokenMs}ms; full response {fullResponseMs}ms.");
+        return Probe("D8", "响应时延", "性能", "warn", "high", 0, 20, $"Too slow; first token {firstTokenMs}ms; full response {fullResponseMs}ms.");
     }
 
     private static SelfTestProbeResult BuildTokenProbe(TokenUsage? usage)
@@ -509,7 +543,7 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         };
     }
 
-    private static bool TryBuildChatCompletionsEndpoint(string rawUrl, out Uri endpoint, out string error)
+    private static bool TryBuildEndpoint(string rawUrl, string apiType, out Uri endpoint, out string error)
     {
         endpoint = null!;
         error = string.Empty;
@@ -521,7 +555,8 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             return false;
         }
 
-        if (uri.AbsolutePath.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
+        var targetPath = apiType == "anthropic" ? "/messages" : "/chat/completions";
+        if (uri.AbsolutePath.EndsWith(targetPath, StringComparison.OrdinalIgnoreCase))
         {
             endpoint = uri;
             return true;
@@ -529,10 +564,47 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
 
         var baseUrl = uri.ToString().TrimEnd('/');
         var suffix = uri.AbsolutePath.TrimEnd('/').EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
-            ? "/chat/completions"
-            : "/v1/chat/completions";
+            ? targetPath
+            : $"/v1{targetPath}";
         endpoint = new Uri(baseUrl + suffix);
         return true;
+    }
+
+    private static string NormalizeApiType(string? apiType, string modelName)
+    {
+        if (string.Equals(apiType, "anthropic", StringComparison.OrdinalIgnoreCase))
+        {
+            return "anthropic";
+        }
+
+        if (string.Equals(apiType, "openai", StringComparison.OrdinalIgnoreCase))
+        {
+            return "openai";
+        }
+
+        return modelName.Contains("claude", StringComparison.OrdinalIgnoreCase) ||
+            modelName.Contains("anthropic", StringComparison.OrdinalIgnoreCase)
+                ? "anthropic"
+                : "openai";
+    }
+
+    private static void ApplyAuthHeaders(HttpRequestMessage request, string apiType, string apiKey)
+    {
+        if (apiType == "anthropic")
+        {
+            request.Headers.TryAddWithoutValidation("x-api-key", apiKey);
+            request.Headers.TryAddWithoutValidation("anthropic-version", "2023-06-01");
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            return;
+        }
+
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+    }
+
+    private static string NormalizeModelNameForApi(string modelName, string apiType)
+    {
+        var normalized = modelName.Trim();
+        return apiType == "anthropic" ? normalized.Replace('.', '-') : normalized;
     }
 
     private static bool IsReservedHost(string host)
@@ -575,6 +647,20 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             rawBytes[0] == 192 && rawBytes[1] == 168;
     }
 
+    private static bool LooksLikeSuccessResponse(JsonElement root, string apiType)
+    {
+        return apiType == "anthropic"
+            ? LooksLikeAnthropicMessage(root)
+            : LooksLikeOpenAiChatCompletion(root);
+    }
+
+    private static bool LooksLikeStreamDelta(JsonElement root, string apiType)
+    {
+        return apiType == "anthropic"
+            ? LooksLikeAnthropicStreamEvent(root)
+            : LooksLikeOpenAiStreamDelta(root);
+    }
+
     private static bool LooksLikeOpenAiChatCompletion(JsonElement root)
     {
         return root.TryGetProperty("choices", out var choices) &&
@@ -591,8 +677,26 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             choices.GetArrayLength() > 0;
     }
 
-    private static string ExtractMessageContent(JsonElement root)
+    private static bool LooksLikeAnthropicMessage(JsonElement root)
     {
+        return root.TryGetProperty("content", out var content) &&
+            content.ValueKind == JsonValueKind.Array &&
+            content.GetArrayLength() > 0;
+    }
+
+    private static bool LooksLikeAnthropicStreamEvent(JsonElement root)
+    {
+        return root.TryGetProperty("type", out var type) &&
+            type.ValueKind == JsonValueKind.String;
+    }
+
+    private static string ExtractMessageContent(JsonElement root, string apiType)
+    {
+        if (apiType == "anthropic")
+        {
+            return ExtractAnthropicMessageContent(root);
+        }
+
         if (root.TryGetProperty("choices", out var choices) &&
             choices.ValueKind == JsonValueKind.Array &&
             choices.GetArrayLength() > 0 &&
@@ -606,8 +710,13 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         return string.Empty;
     }
 
-    private static string ExtractDeltaContent(JsonElement root)
+    private static string ExtractDeltaContent(JsonElement root, string apiType)
     {
+        if (apiType == "anthropic")
+        {
+            return ExtractAnthropicDeltaContent(root);
+        }
+
         if (root.TryGetProperty("choices", out var choices) &&
             choices.ValueKind == JsonValueKind.Array &&
             choices.GetArrayLength() > 0 &&
@@ -621,17 +730,73 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         return string.Empty;
     }
 
-    private static TokenUsage? ExtractUsage(JsonElement root)
+    private static string ExtractAnthropicMessageContent(JsonElement root)
+    {
+        if (!root.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array)
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder();
+        foreach (var item in content.EnumerateArray())
+        {
+            if (item.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String)
+            {
+                builder.Append(text.GetString());
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    private static string ExtractAnthropicDeltaContent(JsonElement root)
+    {
+        if (root.TryGetProperty("delta", out var delta) &&
+            delta.TryGetProperty("text", out var text) &&
+            text.ValueKind == JsonValueKind.String)
+        {
+            return text.GetString() ?? string.Empty;
+        }
+
+        return string.Empty;
+    }
+
+    private static TokenUsage? ExtractUsage(JsonElement root, string apiType)
     {
         if (!root.TryGetProperty("usage", out var usage) || usage.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
         {
             return null;
         }
 
+        if (apiType == "anthropic")
+        {
+            var input = TryGetInt(usage, "input_tokens");
+            var output = TryGetInt(usage, "output_tokens");
+            return new TokenUsage(input, output, input.HasValue || output.HasValue ? (input ?? 0) + (output ?? 0) : null);
+        }
+
         return new TokenUsage(
             TryGetInt(usage, "prompt_tokens") ?? TryGetInt(usage, "input_tokens"),
             TryGetInt(usage, "completion_tokens") ?? TryGetInt(usage, "output_tokens"),
             TryGetInt(usage, "total_tokens"));
+    }
+
+    private static TokenUsage? MergeUsage(TokenUsage? current, TokenUsage? next)
+    {
+        if (current is null)
+        {
+            return next;
+        }
+
+        if (next is null)
+        {
+            return current;
+        }
+
+        var input = next.InputTokens ?? current.InputTokens;
+        var output = next.OutputTokens ?? current.OutputTokens;
+        var total = next.TotalTokens ?? current.TotalTokens ?? (input.HasValue || output.HasValue ? (input ?? 0) + (output ?? 0) : null);
+        return new TokenUsage(input, output, total);
     }
 
     private static bool TryParseProbeJson(string content, out JsonElement root)

@@ -347,18 +347,45 @@ public sealed class DatabaseInitializationHostedService(
 
     private async Task EnsureRelayOfferAutoTestColumnsAsync(CancellationToken cancellationToken)
     {
+        var columns = new (string Name, string Definition)[]
+        {
+            ("auto_test_enabled", "ALTER TABLE relay_offers ADD COLUMN auto_test_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER status;"),
+            ("test_api_key", "ALTER TABLE relay_offers ADD COLUMN test_api_key TEXT NULL AFTER auto_test_enabled;")
+        };
+
         await using var connection = new MySqlConnection(mySqlOptions.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken);
 
-        if (!await TableExistsAsync(connection, "relay_offers", cancellationToken) ||
-            await ColumnExistsAsync(connection, "relay_offers", "auto_test_enabled", cancellationToken))
+        if (!await TableExistsAsync(connection, "relay_offers", cancellationToken))
         {
             return;
         }
 
-        await using var alterCommand = connection.CreateCommand();
-        alterCommand.CommandText = "ALTER TABLE relay_offers ADD COLUMN auto_test_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER status;";
-        await alterCommand.ExecuteNonQueryAsync(cancellationToken);
+        foreach (var column in columns)
+        {
+            if (await ColumnExistsAsync(connection, "relay_offers", column.Name, cancellationToken))
+            {
+                continue;
+            }
+
+            await using var alterCommand = connection.CreateCommand();
+            alterCommand.CommandText = column.Definition;
+            await alterCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        if (await ColumnExistsAsync(connection, "relay_sites", "test_api_key", cancellationToken))
+        {
+            await using var backfillCommand = connection.CreateCommand();
+            backfillCommand.CommandText = """
+                UPDATE relay_offers offer
+                INNER JOIN relay_sites site ON site.id = offer.site_id
+                SET offer.test_api_key = site.test_api_key
+                WHERE (offer.test_api_key IS NULL OR offer.test_api_key = '')
+                  AND site.test_api_key IS NOT NULL
+                  AND site.test_api_key <> '';
+                """;
+            await backfillCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
     }
 
     private async Task EnsureArticleTagSchemaAsync(CancellationToken cancellationToken)

@@ -10,6 +10,8 @@ public sealed class CreateSelfTestRequest
 
     public string ApiKey { get; init; } = string.Empty;
 
+    public string ApiType { get; init; } = "openai";
+
     public bool IsStream { get; init; } = true;
 
     public string TestMode { get; init; } = "basic";

@@ -77,6 +77,7 @@ export default function SiteDetailContent({ detail }: SiteDetailContentProps) {
                 { title: "站点价", render: (_, record) => price(record.siteInputPriceUsd, record.siteOutputPriceUsd) },
                 { title: "折算价", render: (_, record) => price(record.effectiveInputPriceUsd, record.effectiveOutputPriceUsd) },
                 { title: "来源", dataIndex: "sourceType", width: 90 },
+                { title: "测试 Key", dataIndex: "hasTestApiKey", width: 100, render: (hasKey?: boolean) => <Tag color={hasKey ? "green" : "orange"}>{hasKey ? "已配置" : "未配置"}</Tag> },
                 { title: "状态", dataIndex: "status", width: 90, render: (status: string) => <Tag color={statusTone[status] ?? "default"}>{status}</Tag> }
               ]}
             />
