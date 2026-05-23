@@ -125,7 +125,6 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
                         content = prompt
                     }
                 },
-                ["temperature"] = 0,
                 ["max_tokens"] = 260,
                 ["stream"] = request.IsStream
             };
@@ -142,10 +141,14 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
                     content = prompt
                 }
             },
-            ["temperature"] = 0,
             ["max_tokens"] = 260,
             ["stream"] = request.IsStream
         };
+
+        if (!ShouldOmitSamplingParameters(request.ModelName, apiType))
+        {
+            payload["temperature"] = 0;
+        }
 
         if (request.IsStream)
         {
@@ -169,12 +172,14 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         var root = document.RootElement.Clone();
         var content = ExtractMessageContent(root, apiType);
         var usage = ExtractUsage(root, apiType);
+        var returnedModel = ExtractReturnedModel(root, apiType);
 
         return new ProbeResponse(
             responseHeaderMs,
             (int)Math.Min(stopwatch.ElapsedMilliseconds, int.MaxValue),
             content,
             usage,
+            returnedModel,
             OpenAiShapeValid: LooksLikeSuccessResponse(root, apiType),
             StreamIntegrityValid: null,
             StreamChunkCount: null,
@@ -194,6 +199,7 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         var shapeValid = true;
         var contentBuilder = new StringBuilder();
         TokenUsage? usage = null;
+        string? returnedModel = null;
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var reader = new StreamReader(stream, Encoding.UTF8);
@@ -236,6 +242,7 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             }
 
             var delta = ExtractDeltaContent(root, apiType);
+            returnedModel ??= ExtractReturnedModel(root, apiType);
             if (!string.IsNullOrEmpty(delta))
             {
                 firstTokenMs ??= (int)Math.Min(stopwatch.ElapsedMilliseconds, int.MaxValue);
@@ -254,6 +261,7 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             (int)Math.Min(stopwatch.ElapsedMilliseconds, int.MaxValue),
             contentBuilder.ToString(),
             usage,
+            returnedModel,
             OpenAiShapeValid: shapeValid && chunkCount > 0,
             StreamIntegrityValid: streamIntegrityValid,
             StreamChunkCount: chunkCount,
@@ -279,6 +287,7 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         checks.Add(BuildLatencyProbe(response.FirstTokenMs, response.FullResponseMs));
         checks.Add(BuildTokenProbe(response.Usage));
         checks.Add(BuildIdentityProbe(request.ModelName, response.Content));
+        checks.Add(BuildFullModelProbe(request.ModelName, response.ReturnedModel, response.Content));
         checks.Add(BuildUpstreamFingerprintProbe(httpResponse));
 
         if (request.IsStream)
@@ -431,6 +440,42 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             0,
             matched ? 0 : 8,
             matched ? $"模型自述身份与 {expectedFamily} 模型族基本一致。" : $"模型自述身份没有明确匹配请求的 {expectedFamily} 模型族。");
+    }
+
+    private static SelfTestProbeResult BuildFullModelProbe(string requestedModel, string? returnedModel, string content)
+    {
+        var requested = NormalizeModelFingerprint(requestedModel);
+        var returned = NormalizeModelFingerprint(returnedModel ?? string.Empty);
+        var hasReturnedModel = !string.IsNullOrWhiteSpace(returned);
+        var exactMatch = hasReturnedModel &&
+            (returned == requested ||
+             returned.Contains(requested, StringComparison.OrdinalIgnoreCase) ||
+             requested.Contains(returned, StringComparison.OrdinalIgnoreCase));
+        var claimMatches = TryParseProbeJson(content, out var root) &&
+            NormalizeModelFingerprint(TryGetString(root, "model_claim"))
+                .Contains(GetExpectedModelFamily(requestedModel), StringComparison.OrdinalIgnoreCase);
+
+        if (exactMatch)
+        {
+            return Probe("D9", "满血模型指纹", "身份", "pass", "high", 12, 0, $"上游响应 model 字段为 {returnedModel}，与请求模型 {requestedModel} 基本一致。这是判断是否被降级或替换的最高权重信号。");
+        }
+
+        if (hasReturnedModel)
+        {
+            return Probe("D9", "满血模型指纹", "身份", "warn", "high", 0, 28, $"上游响应 model 字段为 {returnedModel}，与请求模型 {requestedModel} 不一致，存在模型别名、降级或替换风险。");
+        }
+
+        return Probe(
+            "D9",
+            "满血模型指纹",
+            "身份",
+            claimMatches ? "warn" : "unknown",
+            claimMatches ? "medium" : "low",
+            claimMatches ? 4 : 0,
+            claimMatches ? 6 : 0,
+            claimMatches
+                ? "上游未返回可比对的 model 字段，只能依赖模型自述身份，不能证明是满血模型。"
+                : "上游未返回可比对的 model 字段，也没有足够的模型自述信息，无法判断是否为满血模型。");
     }
 
     private static SelfTestProbeResult BuildUpstreamFingerprintProbe(HttpResponseMessage response)
@@ -609,6 +654,13 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
                 : "openai";
     }
 
+    private static bool ShouldOmitSamplingParameters(string modelName, string apiType)
+    {
+        return string.Equals(apiType, "anthropic", StringComparison.OrdinalIgnoreCase) ||
+            modelName.Contains("claude", StringComparison.OrdinalIgnoreCase) ||
+            modelName.Contains("anthropic", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static void ApplyAuthHeaders(HttpRequestMessage request, string apiType, string apiKey)
     {
         if (apiType == "anthropic")
@@ -782,6 +834,24 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         return string.Empty;
     }
 
+    private static string? ExtractReturnedModel(JsonElement root, string apiType)
+    {
+        if (root.TryGetProperty("model", out var model) && model.ValueKind == JsonValueKind.String)
+        {
+            return model.GetString();
+        }
+
+        if (apiType == "anthropic" &&
+            root.TryGetProperty("message", out var message) &&
+            message.TryGetProperty("model", out var messageModel) &&
+            messageModel.ValueKind == JsonValueKind.String)
+        {
+            return messageModel.GetString();
+        }
+
+        return null;
+    }
+
     private static TokenUsage? ExtractUsage(JsonElement root, string apiType)
     {
         if (!root.TryGetProperty("usage", out var usage) || usage.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
@@ -899,6 +969,15 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         return "unknown";
     }
 
+    private static string NormalizeModelFingerprint(string modelName)
+    {
+        return new string(modelName
+            .Trim()
+            .ToLowerInvariant()
+            .Where(char.IsLetterOrDigit)
+            .ToArray());
+    }
+
     private sealed record TokenUsage(int? InputTokens, int? OutputTokens, int? TotalTokens);
 
     private sealed record ProbeResponse(
@@ -906,6 +985,7 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         int FullResponseMs,
         string Content,
         TokenUsage? Usage,
+        string? ReturnedModel,
         bool OpenAiShapeValid,
         bool? StreamIntegrityValid,
         int? StreamChunkCount,

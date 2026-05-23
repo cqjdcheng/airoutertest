@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\CheapAI.Application\CheapAI.Application.csproj" />
+    <ProjectReference Include="..\..\CheapAI.Infrastructure\CheapAI.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>
