@@ -6,6 +6,18 @@ export function score(value?: number | null, digits = 1) {
   return typeof value === "number" ? value.toFixed(digits) : "-";
 }
 
+export function trustScore(matchScore?: number | null, riskScore?: number | null) {
+  if (typeof matchScore === "number") {
+    return Math.max(0, Math.min(100, matchScore));
+  }
+
+  if (typeof riskScore === "number") {
+    return Math.max(0, Math.min(100, 100 - riskScore));
+  }
+
+  return null;
+}
+
 export function percent(value?: number | null) {
   return typeof value === "number" ? `${value.toFixed(1)}%` : "-";
 }
@@ -33,19 +45,4 @@ export function formatDateTime(value?: string | null) {
   const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "00";
 
   return `${get("year")}/${get("month")}/${get("day")} ${get("hour")}:${get("minute")}`;
-}
-
-export function riskLabel(level?: string | null) {
-  if (level === "low") return "低风险";
-  if (level === "medium") return "中风险";
-  if (level === "high") return "高风险";
-  if (level === "critical") return "严重风险";
-  return "未知";
-}
-
-export function riskTone(level?: string | null) {
-  if (level === "low") return "success";
-  if (level === "medium") return "warning";
-  if (level === "high" || level === "critical") return "danger";
-  return "neutral";
 }

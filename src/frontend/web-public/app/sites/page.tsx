@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { PublicHeader } from "@/app/components/PublicHeader";
 import { PublicPageHero } from "@/app/components/PublicPageHero";
+import { SiteStatusBar, type SiteStatus24h } from "@/app/components/SiteStatus24h";
 import { getJson, type PublicEnvelope } from "@/lib/api";
-import { formatDateTime, percent, riskLabel, riskTone, score } from "@/lib/format";
+import { formatDateTime, percent, score, trustScore } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,7 @@ type SiteItem = {
   riskLevel: string;
   coveredModelCount: number;
   latestTestAt?: string;
+  status24h: SiteStatus24h;
 };
 
 type PagedResult<T> = {
@@ -39,19 +41,16 @@ export default async function SitesPage() {
         <PublicPageHero
           eyebrow="Relay Directory"
           title="中转站大全"
-          description="按综合评分整理中转站，优先看风险、最近测试和模型覆盖，再进入详情核对价格。"
+          description="按统一分数整理中转站，优先看分数、24 小时状态和模型覆盖，再进入详情核对价格。"
           aside={
             <>
               <div className="metric-card">
                 <span>收录站点</span>
                 <strong>{items.length}</strong>
               </div>
-            
             </>
           }
         />
-
-       
 
         <section className="data-table">
           <div className="overflow-x-auto">
@@ -60,7 +59,7 @@ export default async function SitesPage() {
                 <tr>
                   <th>中转站</th>
                   <th>综合评分</th>
-                  <th>稳定 / 风险</th>
+                  <th>24 小时状态</th>
                   <th>覆盖 / 最近测试</th>
                   <th>特点</th>
                   <th>操作</th>
@@ -71,17 +70,19 @@ export default async function SitesPage() {
                   items.map((item, index) => (
                     <tr key={item.siteSlug}>
                       <td>
-                        <strong>#{index + 1} {item.siteName}</strong>
+                        <strong>
+                          #{index + 1} {item.siteName}
+                        </strong>
                         <span>{item.description ?? item.siteSlug}</span>
                       </td>
                       <td>
                         <strong>{score(item.siteScore)}</strong>
+                        <span>稳定 {formatScorePercent(item.stabilityScore)}</span>
                       </td>
                       <td>
-                        {/* <span>可用 {formatScorePercent(item.availabilityScore)}</span>
-                        <span>稳定 {formatScorePercent(item.stabilityScore)}</span> */}
-                        <span className="status-pill" data-tone={riskTone(item.riskLevel)}>
-                          {riskLabel(item.riskLevel)} {score(item.riskScore)}
+                        <SiteStatusBar status24h={item.status24h} />
+                        <span className="status-pill" data-tone="neutral">
+                          分数 {score(trustScore(null, item.riskScore))}
                         </span>
                       </td>
                       <td>

@@ -84,6 +84,7 @@ public sealed class PublicSiteQueryRepository(ISqlSugarClient db) : IPublicSiteQ
             .Select(x => x.First())
             .ToList();
 
+        var recent24hTests = await QueryRecent24hTestsAsync(site.Id, modelSlug, cancellationToken);
         var latestTests = await QueryLatestTestsAsync(site.Id, modelSlug, cancellationToken);
         var maxRiskScore = latestTests.Count > 0
             ? latestTests.Max(x => x.RiskScore ?? 0m)
@@ -119,6 +120,7 @@ public sealed class PublicSiteQueryRepository(ISqlSugarClient db) : IPublicSiteQ
                 EffectiveOutputPriceUsd = x.EffectiveOutputPriceUsd
             }).ToList(),
             LatestTests = latestTests,
+            Status24h = BuildSiteStatus24h(recent24hTests),
             RiskSummary = new PublicSiteRiskSummaryResponse
             {
                 MaxRiskScore = maxRiskScore,
@@ -136,6 +138,44 @@ public sealed class PublicSiteQueryRepository(ISqlSugarClient db) : IPublicSiteQ
                 ]
             }
         };
+    }
+
+    private async Task<List<SiteTestRecordRow>> QueryRecent24hTestsAsync(ulong siteId, string? modelSlug, CancellationToken cancellationToken)
+    {
+        var since = DateTime.UtcNow.AddHours(-24);
+        var query = db.Queryable<TestRecordEntity, AiModelEntity>(
+                (record, model) => record.ModelId == model.Id)
+            .Where((record, model) =>
+                record.SiteId == siteId &&
+                record.TestedAt >= since &&
+                model.DeletedAt == null &&
+                model.Status == "active" &&
+                record.TestType != "user" &&
+                record.TestType != "self");
+
+        if (!string.IsNullOrWhiteSpace(modelSlug))
+        {
+            query = query.Where((record, model) => model.Slug == modelSlug);
+        }
+
+        return await query
+            .OrderBy((record, model) => record.TestedAt, OrderByType.Desc)
+            .Select((record, model) => new SiteTestRecordRow
+            {
+                Id = record.Id,
+                ModelSlug = model.Slug,
+                ModelName = model.DisplayName,
+                TestType = record.TestType,
+                Status = record.Status,
+                FirstTokenMs = record.FirstTokenMs,
+                FullResponseMs = record.FullResponseMs,
+                RiskScore = record.RiskScore,
+                RiskLevel = record.RiskLevel,
+                MatchScore = record.MatchScore,
+                ErrorMessage = record.ErrorMessage,
+                TestedAt = record.TestedAt
+            })
+            .ToListAsync(cancellationToken);
     }
 
     private async Task<IReadOnlyList<PublicSiteLatestTestResponse>> QueryLatestTestsAsync(ulong siteId, string? modelSlug, CancellationToken cancellationToken)
@@ -164,6 +204,7 @@ public sealed class PublicSiteQueryRepository(ISqlSugarClient db) : IPublicSiteQ
                 FullResponseMs = record.FullResponseMs,
                 RiskScore = record.RiskScore,
                 RiskLevel = record.RiskLevel,
+                MatchScore = record.MatchScore,
                 ErrorMessage = record.ErrorMessage,
                 TestedAt = record.TestedAt
             })
@@ -182,9 +223,106 @@ public sealed class PublicSiteQueryRepository(ISqlSugarClient db) : IPublicSiteQ
             FullResponseMs = row.FullResponseMs,
             RiskScore = row.RiskScore,
             RiskLevel = row.RiskLevel,
+            MatchScore = row.MatchScore,
             ErrorMessage = row.ErrorMessage,
             TestedAt = row.TestedAt
         }).ToList();
+    }
+
+    private static PublicSiteStatus24hResponse BuildSiteStatus24h(IReadOnlyList<SiteTestRecordRow> tests)
+    {
+        var since = DateTime.UtcNow.AddHours(-24);
+        var buckets = Enumerable.Range(0, 24)
+            .Select(index => BuildSiteStatusBucket(
+                tests.Where(test =>
+                    test.TestedAt.HasValue &&
+                    test.TestedAt.Value >= since.AddHours(index) &&
+                    test.TestedAt.Value < since.AddHours(index + 1))
+                .ToList(),
+                since.AddHours(index)))
+            .ToList();
+
+        var totalTests = tests.Count;
+        var successCount = tests.Count(test => IsSuccessStatus(test.Status));
+
+        return new PublicSiteStatus24hResponse
+        {
+            SuccessRate = totalTests == 0 ? 0 : Math.Round(successCount * 100m / totalTests, 1),
+            TotalTests = totalTests,
+            HealthyCount = buckets.Count(bucket => bucket.StatusTone == "success"),
+            WarningCount = buckets.Count(bucket => bucket.StatusTone == "warning"),
+            CriticalCount = buckets.Count(bucket => bucket.StatusTone == "danger"),
+            LastTestedAt = tests.FirstOrDefault()?.TestedAt,
+            Buckets = buckets
+        };
+    }
+
+    private static PublicSiteStatusBucketResponse BuildSiteStatusBucket(IReadOnlyList<SiteTestRecordRow> tests, DateTime slotStartAt)
+    {
+        var slotLabel = $"{slotStartAt.AddHours(8):HH}:00";
+        if (tests.Count == 0)
+        {
+            return new PublicSiteStatusBucketResponse
+            {
+                SlotLabel = slotLabel,
+                SlotStartAt = slotStartAt,
+                StatusTone = "neutral",
+                StatusLabel = "暂无测试",
+                HasTest = false
+            };
+        }
+
+        var critical = tests.Where(IsCriticalTest).OrderByDescending(test => test.TestedAt).FirstOrDefault();
+        if (critical is not null)
+        {
+            return MapSiteStatusBucket(critical, slotLabel, slotStartAt, "danger", "异常");
+        }
+
+        var warning = tests.Where(IsWarningTest).OrderByDescending(test => test.TestedAt).FirstOrDefault();
+        if (warning is not null)
+        {
+            return MapSiteStatusBucket(warning, slotLabel, slotStartAt, "warning", "波动");
+        }
+
+        return MapSiteStatusBucket(tests.OrderByDescending(test => test.TestedAt).First(), slotLabel, slotStartAt, "success", "正常");
+    }
+
+    private static PublicSiteStatusBucketResponse MapSiteStatusBucket(SiteTestRecordRow test, string slotLabel, DateTime slotStartAt, string tone, string label)
+    {
+        return new PublicSiteStatusBucketResponse
+        {
+            SlotLabel = slotLabel,
+            SlotStartAt = slotStartAt,
+            StatusTone = tone,
+            StatusLabel = label,
+            HasTest = true,
+            TestedAt = test.TestedAt,
+            ModelName = test.ModelName,
+            TestType = test.TestType,
+            Status = test.Status,
+            RiskScore = test.RiskScore
+        };
+    }
+
+    private static bool IsSuccessStatus(string status)
+    {
+        return string.Equals(status, "success", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, "succeeded", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsCriticalTest(SiteTestRecordRow test)
+    {
+        return string.Equals(test.Status, "failed", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(test.Status, "error", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(test.RiskLevel, "high", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(test.RiskLevel, "critical", StringComparison.OrdinalIgnoreCase) ||
+               (test.RiskScore ?? 0m) >= 51m;
+    }
+
+    private static bool IsWarningTest(SiteTestRecordRow test)
+    {
+        return string.Equals(test.RiskLevel, "medium", StringComparison.OrdinalIgnoreCase) ||
+               ((test.RiskScore ?? 0m) >= 21m && (test.RiskScore ?? 0m) < 51m);
     }
 
     private static string ResolveRiskLevel(decimal? score)
@@ -222,6 +360,7 @@ public sealed class PublicSiteQueryRepository(ISqlSugarClient db) : IPublicSiteQ
         public int? FullResponseMs { get; init; }
         public decimal? RiskScore { get; init; }
         public string RiskLevel { get; init; } = "low";
+        public decimal? MatchScore { get; init; }
         public string? ErrorMessage { get; init; }
         public DateTime? TestedAt { get; init; }
     }

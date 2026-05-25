@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getJson, type PublicEnvelope } from "@/lib/api";
-import { money, riskLabel, riskTone, score } from "@/lib/format";
+import { money, score, trustScore } from "@/lib/format";
 
 type ModelItem = {
   modelSlug: string;
@@ -74,7 +74,7 @@ export async function RankingPageView({ selectedModelSlug }: { selectedModelSlug
               <tr>
                 <th>站点</th>
                 <th>折算价</th>
-                <th>风险</th>
+                <th>分数</th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -91,9 +91,10 @@ export async function RankingPageView({ selectedModelSlug }: { selectedModelSlug
                       <span>输入 / 输出</span>
                     </td>
                     <td>
-                      <span className="status-pill" data-tone={riskTone(item.riskLevel)}>
-                        {riskLabel(item.riskLevel)} {score(item.riskScore)}
+                      <span className="status-pill" data-tone="neutral">
+                        {score(trustScore(null, item.riskScore))}
                       </span>
+                      <span>越高越可信</span>
                     </td>
                     <td>
                       <Link href={`/sites/${item.siteSlug}`} className="text-button">

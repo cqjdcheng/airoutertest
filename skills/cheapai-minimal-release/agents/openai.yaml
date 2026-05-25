@@ -1,0 +1,4 @@
+interface:
+  display_name: "CheapAI Minimal Release"
+  short_description: "Create and apply CheapAI releases with minimal production access."
+  default_prompt: "Use the CheapAI minimal release workflow to validate locally, generate a release package, and guide or perform restricted production deployment without using the root password."

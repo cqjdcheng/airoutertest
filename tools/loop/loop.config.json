@@ -2,7 +2,7 @@
   "root": "D:/project/CheapAi",
   "apiUrl": "http://127.0.0.1:5050",
   "publicUrl": "http://127.0.0.1:3000",
-  "adminUrl": "http://127.0.0.1:8000",
+  "adminUrl": "http://127.0.0.1:8100",
   "mysql": {
     "host": "127.0.0.1",
     "port": 3334,

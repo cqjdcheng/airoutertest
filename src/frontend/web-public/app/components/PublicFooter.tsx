@@ -27,6 +27,10 @@ const footerGroups = [
       { href: "/tests", label: "再看稳定与风险" },
       { href: "/sites", label: "最后核对企业属性" }
     ]
+  },
+  {
+    title: "联系",
+    links: [{ href: "/contact", label: "联系我" }]
   }
 ];
 

@@ -27,7 +27,7 @@ function SelfTestContent() {
         <PublicPageHero
           eyebrow="Self Test"
           title="中转接口自助测试"
-          description="输入接口地址、API Key 和模型名，直接查看一次真实请求的速度、结构、Token 与风险信号。"
+          description="输入接口地址、API Key 和模型名，直接查看一次真实请求的速度、结构、Token 与可信分数。"
           aside={
             <>
               <div className="metric-card">

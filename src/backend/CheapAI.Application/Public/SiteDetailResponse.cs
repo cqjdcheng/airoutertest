@@ -6,6 +6,7 @@ public sealed class SiteDetailResponse
     public IReadOnlyList<PublicSiteSupportedModelResponse> SupportedModels { get; init; } = [];
     public IReadOnlyList<PublicSitePricingResponse> Pricing { get; init; } = [];
     public IReadOnlyList<PublicSiteLatestTestResponse> LatestTests { get; init; } = [];
+    public PublicSiteStatus24hResponse Status24h { get; init; } = new();
     public PublicSiteRiskSummaryResponse RiskSummary { get; init; } = new();
     public PublicSiteTrendsResponse Trends { get; init; } = new();
 }
@@ -54,6 +55,7 @@ public sealed class PublicSiteLatestTestResponse
     public decimal? Stability7d { get; init; }
     public decimal? RiskScore { get; init; }
     public string RiskLevel { get; init; } = "low";
+    public decimal? MatchScore { get; init; }
     public string? ErrorMessage { get; init; }
     public DateTime? TestedAt { get; init; }
 }

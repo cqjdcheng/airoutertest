@@ -21,6 +21,7 @@ public sealed class ModelRankingSnapshotRepository(ISqlSugarClient db, IRelaySit
         var topStabilityCards = await QueryCardsAsync("stability", "7d", 5, cancellationToken);
         var riskHighlights = await QueryRiskHighlightsAsync(5, cancellationToken);
         var popularModels = await QueryPopularModelsAsync(5, cancellationToken);
+        var weather = await QueryHomeWeatherAsync(cancellationToken);
 
         return new HomeOverviewResponse
         {
@@ -33,6 +34,7 @@ public sealed class ModelRankingSnapshotRepository(ISqlSugarClient db, IRelaySit
                 TestCount = await db.Queryable<TestRecordEntity>().CountAsync(cancellationToken),
                 LatestTestAt = latestSnapshotAt == default ? null : latestSnapshotAt
             },
+            Weather = weather,
             TopPriceCards = topPriceCards,
             TopStabilityCards = topStabilityCards,
             RiskHighlights = riskHighlights
@@ -368,6 +370,93 @@ public sealed class ModelRankingSnapshotRepository(ISqlSugarClient db, IRelaySit
             filtered.Count == 0 ? null : filtered.Max(row => row.UpdatedAt));
     }
 
+    private async Task<HomeWeatherResponse> QueryHomeWeatherAsync(CancellationToken cancellationToken)
+    {
+        var since = DateTime.UtcNow.AddHours(-24);
+        var rows = await db.Queryable<TestRecordEntity, RelaySiteEntity, AiModelEntity>(
+                (record, site, model) => new JoinQueryInfos(
+                    JoinType.Inner, record.SiteId == site.Id,
+                    JoinType.Left, record.ModelId == model.Id))
+            .Where((record, site, model) =>
+                record.TestedAt >= since &&
+                site.DeletedAt == null &&
+                site.Status == "active" &&
+                record.TestType != "user" &&
+                record.TestType != "self" &&
+                (record.ModelId == 0 || (model.DeletedAt == null && model.Status == "active")))
+            .Select((record, site, model) => new HomeWeatherRow
+            {
+                SiteId = site.Id,
+                ModelId = record.ModelId,
+                Status = record.Status,
+                RiskScore = record.RiskScore,
+                RiskLevel = record.RiskLevel,
+                FirstTokenMs = record.FirstTokenMs,
+                TestedAt = record.TestedAt
+            })
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            return new HomeWeatherResponse
+            {
+                Summary = "最近 24 小时还没有可公开的平台测试，先观望。",
+                Highlights =
+                [
+                    "当前窗口内暂无平台自动测试样本。",
+                    "首页晴雨表会在新一轮自动测试写入后更新。",
+                    "建议先进入测试记录页查看更长时间范围的数据。"
+                ]
+            };
+        }
+
+        var latestBySite = rows
+            .GroupBy(x => x.SiteId)
+            .Select(group => group
+                .OrderByDescending(item => item.TestedAt)
+                .First())
+            .ToList();
+
+        var successCount = rows.Count(item => IsSuccessStatus(item.Status));
+        var failedCount = rows.Count(item => IsFailedStatus(item.Status));
+        var activeModelCount = rows.Where(item => item.ModelId > 0).Select(item => item.ModelId).Distinct().Count();
+        var degradedSiteCount = latestBySite.Count(item => IsFailedStatus(item.Status) || IsHighRisk(item));
+        var highRiskSiteCount = latestBySite.Count(IsHighRisk);
+        var successRate = Math.Round(successCount * 100m / rows.Count, 1);
+        var averageFirstTokenMs = rows
+            .Where(item => IsSuccessStatus(item.Status) && item.FirstTokenMs.HasValue && item.FirstTokenMs.Value > 0)
+            .Select(item => item.FirstTokenMs!.Value)
+            .DefaultIfEmpty()
+            .Average();
+
+        var weatherCode = ResolveWeatherCode(successRate, latestBySite.Count, degradedSiteCount, highRiskSiteCount);
+
+        return new HomeWeatherResponse
+        {
+            WeatherCode = weatherCode,
+            WeatherLabel = ResolveWeatherLabel(weatherCode),
+            Summary = BuildWeatherSummary(weatherCode),
+            SuccessRate = successRate,
+            TotalTests = rows.Count,
+            SuccessCount = successCount,
+            FailedCount = failedCount,
+            ActiveSiteCount = latestBySite.Count,
+            DegradedSiteCount = degradedSiteCount,
+            HighRiskSiteCount = highRiskSiteCount,
+            ActiveModelCount = activeModelCount,
+            AverageFirstTokenMs = averageFirstTokenMs <= 0 ? null : (int)Math.Round(averageFirstTokenMs),
+            LastTestedAt = rows.Max(item => item.TestedAt),
+            Highlights = BuildWeatherHighlights(
+                rows.Count,
+                successRate,
+                latestBySite.Count,
+                activeModelCount,
+                degradedSiteCount,
+                highRiskSiteCount,
+                averageFirstTokenMs <= 0 ? null : (int)Math.Round(averageFirstTokenMs))
+        };
+    }
+
     private static string ResolveRiskLevel(decimal? riskScore)
     {
         var score = riskScore ?? 0;
@@ -375,6 +464,103 @@ public sealed class ModelRankingSnapshotRepository(ISqlSugarClient db, IRelaySit
         if (score >= 51) return "high";
         if (score >= 21) return "medium";
         return "low";
+    }
+
+    private static string ResolveWeatherCode(decimal successRate, int activeSiteCount, int degradedSiteCount, int highRiskSiteCount)
+    {
+        var degradedRatio = activeSiteCount == 0 ? 0 : (decimal)degradedSiteCount / activeSiteCount;
+
+        if (successRate >= 97m && highRiskSiteCount == 0 && degradedRatio <= 0.1m)
+        {
+            return "sunny";
+        }
+
+        if (successRate >= 90m && degradedRatio <= 0.3m && highRiskSiteCount <= 2)
+        {
+            return "cloudy";
+        }
+
+        if (successRate >= 75m && degradedRatio <= 0.6m)
+        {
+            return "rainy";
+        }
+
+        return "stormy";
+    }
+
+    private static string ResolveWeatherLabel(string weatherCode)
+    {
+        return weatherCode switch
+        {
+            "sunny" => "放晴",
+            "cloudy" => "多云",
+            "rainy" => "小雨",
+            "stormy" => "暴雨",
+            _ => "待观察"
+        };
+    }
+
+    private static string BuildWeatherSummary(string weatherCode)
+    {
+        return weatherCode switch
+        {
+            "sunny" => "过去 24 小时整体稳定，大多数中转链路保持通畅，可优先按价格和模型覆盖做选择。",
+            "cloudy" => "过去 24 小时整体可用，但已有部分站点开始波动，充值前建议先做小额实测。",
+            "rainy" => "过去 24 小时波动明显，失败和异常站点开始增多，先看最近测试再决定充值。",
+            "stormy" => "过去 24 小时异常密集，建议暂停大额充值，优先准备备用站点或改用更稳的模型。",
+            _ => "最近 24 小时暂无有效平台测试。"
+        };
+    }
+
+    private static IReadOnlyList<string> BuildWeatherHighlights(
+        int totalTests,
+        decimal successRate,
+        int activeSiteCount,
+        int activeModelCount,
+        int degradedSiteCount,
+        int highRiskSiteCount,
+        int? averageFirstTokenMs)
+    {
+        var highlights = new List<string>
+        {
+            $"最近 24 小时共完成 {totalTests} 条平台测试，成功率 {successRate:F1}%。",
+            $"覆盖 {activeSiteCount} 个中转站、{activeModelCount} 个模型。"
+        };
+
+        if (degradedSiteCount > 0)
+        {
+            highlights.Add($"当前有 {degradedSiteCount} 个站点最近一次测试出现失败或高风险，其中高风险站点 {highRiskSiteCount} 个。");
+        }
+        else
+        {
+            highlights.Add("当前各站点最近一次公开测试未出现失败或高风险信号。");
+        }
+
+        if (averageFirstTokenMs.HasValue)
+        {
+            highlights.Add($"成功样本的首 Token 平均响应约 {averageFirstTokenMs.Value}ms。");
+        }
+
+        return highlights;
+    }
+
+    private static bool IsSuccessStatus(string status)
+    {
+        return status.Equals("success", StringComparison.OrdinalIgnoreCase) ||
+               status.Equals("succeeded", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsFailedStatus(string status)
+    {
+        return status.Equals("failed", StringComparison.OrdinalIgnoreCase) ||
+               status.Equals("error", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsHighRisk(HomeWeatherRow row)
+    {
+        return row.RiskScore >= 51m ||
+               string.Equals(row.RiskLevel, "high", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(row.RiskLevel, "critical", StringComparison.OrdinalIgnoreCase);
     }
 
     private static ModelRankingItemResponse MapRankingItem(ModelRankingRow item)
@@ -422,6 +608,23 @@ public sealed class ModelRankingSnapshotRepository(ISqlSugarClient db, IRelaySit
         public bool SupportsRefund { get; init; }
 
         public bool HasDocs { get; init; }
+    }
+
+    private sealed class HomeWeatherRow
+    {
+        public ulong SiteId { get; init; }
+
+        public ulong ModelId { get; init; }
+
+        public string Status { get; init; } = string.Empty;
+
+        public decimal RiskScore { get; init; }
+
+        public string RiskLevel { get; init; } = string.Empty;
+
+        public int? FirstTokenMs { get; init; }
+
+        public DateTime TestedAt { get; init; }
     }
 
     private sealed record OfferRankingFallback(

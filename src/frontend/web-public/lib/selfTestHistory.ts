@@ -9,6 +9,7 @@ export type SelfTestHistoryItem = {
   status: string;
   riskScore: number;
   riskLevel: string;
+  matchScore?: number | null;
   resultSummary: string;
   firstTokenMs?: number | null;
   fullResponseMs?: number | null;

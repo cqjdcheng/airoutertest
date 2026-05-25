@@ -121,6 +121,29 @@ function Invoke-CheckedWithRetry {
     }
 }
 
+function Invoke-AdminBuild {
+    $adminEnvPath = Join-Path $Root "src/frontend/web-admin/.env.local"
+    $adminEnvExists = Test-Path -LiteralPath $adminEnvPath
+    $adminEnvContent = ""
+    if ($adminEnvExists) {
+        $adminEnvContent = Get-Content -LiteralPath $adminEnvPath -Raw
+    }
+
+    try {
+        Set-Content -LiteralPath $adminEnvPath -Value "UMI_APP_API_BASE_URL=$($Config.apiUrl)" -NoNewline
+        $env:UMI_APP_API_BASE_URL = $Config.apiUrl
+        Invoke-CheckedWithRetry "admin-build" "$Root/src/frontend/web-admin" "pnpm" @("build")
+    }
+    finally {
+        if ($adminEnvExists) {
+            Set-Content -LiteralPath $adminEnvPath -Value $adminEnvContent -NoNewline
+        }
+        else {
+            Remove-Item -LiteralPath $adminEnvPath -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Stop-CheapAiProcesses {
     $escapedRoot = $Root.Replace("/", "\")
     $processes = Get-CimInstance Win32_Process |
@@ -165,6 +188,8 @@ function Wait-Http {
 }
 
 function Start-PreviewProcesses {
+    $AdminListenPort = ([System.Uri]$Config.adminUrl).Port
+
     Start-Process -FilePath "dotnet" `
         -ArgumentList @("run", "--project", "$Root/src/backend/CheapAI.Api/CheapAI.Api.csproj", "--urls", $Config.apiUrl) `
         -WorkingDirectory "$Root/src/backend/CheapAI.Api" `
@@ -180,7 +205,7 @@ function Start-PreviewProcesses {
         -WindowStyle Hidden
 
     Start-Process -FilePath "pnpm" `
-        -ArgumentList @("dlx", "serve", "$Root/src/frontend/web-admin/dist", "-l", "8000", "-s") `
+        -ArgumentList @("dlx", "serve", "$Root/src/frontend/web-admin/dist", "-l", "$AdminListenPort", "-s") `
         -WorkingDirectory $Root `
         -RedirectStandardOutput $AdminLog `
         -RedirectStandardError $AdminErr `
@@ -347,12 +372,19 @@ function Verify-BackgroundJobs {
         $output += Get-Content -LiteralPath $jobsErr -Raw
     }
 
-    if ($output.Contains("CheapAI recurring jobs registered.") -and $output.Contains("Starting Hangfire Server")) {
+    $quartzStarted = $output.Contains("Scheduler QuartzScheduler_`$_NON_CLUSTERED started.") -or
+        $output.Contains("Quartz Scheduler") -and $output.Contains("started.")
+    $quartzJobsRegistered = $output.Contains("Adding 3 jobs, 3 triggers.") -and
+        $output.Contains("cheapai-price-crawl-daily") -and
+        $output.Contains("cheapai-auto-test-minutely") -and
+        $output.Contains("cheapai-ranking-rebuild-hourly")
+
+    if ($quartzStarted -and $quartzJobsRegistered) {
         Add-Result "background-jobs-startup" "PASS"
         return
     }
 
-    Add-Result "background-jobs-startup" "FAIL" "Recurring jobs or Hangfire server startup log not found"
+    Add-Result "background-jobs-startup" "FAIL" "Quartz scheduler startup log not found"
     throw "Background jobs startup verification failed"
 }
 
@@ -382,7 +414,7 @@ try {
     Invoke-Checked "dotnet-build" $Root "dotnet" @("build", "$Root/CheapAI.slnx")
     Invoke-Checked "dotnet-test" $Root "dotnet" @("test", "$Root/CheapAI.slnx")
     Invoke-CheckedWithRetry "public-build" "$Root/src/frontend/web-public" "pnpm" @("build")
-    Invoke-CheckedWithRetry "admin-build" "$Root/src/frontend/web-admin" "pnpm" @("build")
+    Invoke-AdminBuild
 
     Start-PreviewProcesses
     Invoke-SmokeChecks

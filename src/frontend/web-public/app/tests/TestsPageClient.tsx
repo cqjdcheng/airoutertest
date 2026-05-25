@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { RelayTestPanel, type ModelOption } from "@/app/components/RelayTestPanel";
-import { formatDateTime, riskLabel, riskTone, score } from "@/lib/format";
+import { formatDateTime, score, trustScore } from "@/lib/format";
 import { getJson, type PublicEnvelope } from "@/lib/api";
 import { readSelfTestHistory, subscribeSelfTestHistory, type SelfTestHistoryItem } from "@/lib/selfTestHistory";
 
@@ -23,6 +23,7 @@ export type TestRecord = {
   errorMessage?: string | null;
   riskScore: number;
   riskLevel: string;
+  matchScore?: number | null;
   testedAt: string;
 };
 
@@ -275,7 +276,7 @@ function TestRecordTable({
             <th>站点 / 模型</th>
             <th>测试口径</th>
             <th>速度</th>
-            <th>风险</th>
+            <th>分数</th>
             <th>时间</th>
             <th>详情</th>
           </tr>
@@ -312,10 +313,10 @@ function TestRecordTable({
                     <span>完整响应 {formatMs(item.fullResponseMs)}</span>
                   </td>
                   <td>
-                    <span className="status-pill" data-tone={riskTone(item.riskLevel)}>
-                      {riskLabel(item.riskLevel)}
+                    <span className="status-pill" data-tone="neutral">
+                      {score(trustScore(item.matchScore, item.riskScore))}
                     </span>
-                    <span>风险分 {score(item.riskScore)}</span>
+                    <span>越高越可信</span>
                   </td>
                   <td>{formatDateTime(item.testedAt)}</td>
                   <td>
@@ -385,8 +386,8 @@ function TestDetailModal({
           <span className="status-pill" data-tone={statusTone(detail.status)}>
             {loading ? "加载详情中" : statusLabel(detail.status)}
           </span>
-          <span className="status-pill" data-tone={riskTone(detail.riskLevel)}>
-            {riskLabel(detail.riskLevel)} / {score(detail.riskScore)}
+          <span className="status-pill" data-tone="neutral">
+            分数 {score(trustScore(detail.matchScore, detail.riskScore))}
           </span>
           <span className="status-pill" data-tone="neutral">
             {formatDateTime(detail.testedAt)}
@@ -396,7 +397,7 @@ function TestDetailModal({
         <p className="test-detail-copy">{detail.resultSummary || detail.errorMessage || "暂无摘要。"}</p>
 
         <div className="test-detail-grid">
-          <DetailMetric label="匹配度" value={score(detail.matchScore)} />
+          <DetailMetric label="分数" value={score(trustScore(detail.matchScore, detail.riskScore))} />
           <DetailMetric label="首 token" value={formatMs(detail.firstTokenMs)} />
           <DetailMetric label="完整响应" value={formatMs(detail.fullResponseMs)} />
           <DetailMetric label="Tokens/s" value={formatOptionalNumber(detail.tokensPerSecond)} />
@@ -459,6 +460,7 @@ function detailToRecord(detail: TestRecordDetail, sourceKey?: string): TestRecor
     errorMessage: detail.errorMessage,
     riskScore: detail.riskScore,
     riskLevel: detail.riskLevel,
+    matchScore: detail.matchScore,
     testedAt: detail.testedAt
   };
 }
@@ -480,6 +482,7 @@ function historyToRecord(item: SelfTestHistoryItem): TestRecord {
     errorMessage: undefined,
     riskScore: item.riskScore,
     riskLevel: item.riskLevel,
+    matchScore: item.matchScore,
     testedAt: item.testedAt
   };
 }
@@ -488,7 +491,7 @@ function toDetailFallback(record: TestRecord): TestRecordDetail {
   return {
     ...record,
     resultSummary: record.errorMessage ?? "该记录正在加载详细检测结果。",
-    matchScore: 0,
+    matchScore: record.matchScore ?? trustScore(null, record.riskScore) ?? 0,
     inputTokens: null,
     outputTokens: null,
     totalTokens: null,

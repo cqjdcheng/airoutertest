@@ -2,7 +2,7 @@
 
 import { FormEvent, type CSSProperties, useEffect, useMemo, useState } from "react";
 import { getJson, postJson, type PublicEnvelope } from "@/lib/api";
-import { formatDateTime, riskLabel, riskTone } from "@/lib/format";
+import { formatDateTime, score, trustScore } from "@/lib/format";
 import {
   readSelfTestHistory,
   saveSelfTestHistoryItem,
@@ -70,7 +70,7 @@ const methodItems = [
   ["协议兼容", "检查 OpenAI Chat Completions 与 SSE 基础结构。"],
   ["流式完整性", "记录首 token、chunk 连续性、结束事件和异常中断。"],
   ["Token 与时延", "记录输入、输出、总 token、完整耗时和吞吐。"],
-  ["风险线索", "识别模型自称、上游特征、异常响应和降级痕迹。"]
+  ["可信线索", "识别模型自称、上游特征、异常响应和降级痕迹。"]
 ];
 
 export function RelayTestPanel({
@@ -195,6 +195,7 @@ export function RelayTestPanel({
         status: response.data.status,
         riskScore: response.data.riskScore,
         riskLevel: response.data.riskLevel,
+        matchScore: response.data.matchScore,
         resultSummary: response.data.resultSummary,
         firstTokenMs: response.data.firstTokenMs,
         fullResponseMs: response.data.fullResponseMs,
@@ -211,6 +212,7 @@ export function RelayTestPanel({
 
   const passCount = useMemo(() => result?.checks.filter((item) => item.status === "pass").length ?? 0, [result]);
   const attentionCount = useMemo(() => result?.checks.filter((item) => item.status === "warn" || item.status === "fail").length ?? 0, [result]);
+  const resultScore = trustScore(result?.matchScore, result?.riskScore);
 
   return (
     <div className="relay-test-panel">
@@ -370,13 +372,13 @@ export function RelayTestPanel({
       {result ? (
         <section className={`relay-result ${compact ? "relay-result--compact" : ""}`}>
           <div className="relay-result__summary">
-            <div className="score-ring" style={{ "--score": `${Math.max(0, Math.min(100, result.matchScore))}%` } as CSSProperties}>
-              <strong>{Math.round(result.matchScore)}</strong>
-              <span>匹配度</span>
+            <div className="score-ring" style={{ "--score": `${resultScore ?? 0}%` } as CSSProperties}>
+              <strong>{score(resultScore, 0)}</strong>
+              <span>分数</span>
             </div>
             <div>
               <p className="eyebrow">测试结果</p>
-              <h3>{result.status === "succeeded" ? "请求完成，查看评分" : "请求失败"}</h3>
+              <h3>{result.status === "succeeded" ? "请求完成，查看分数" : "请求失败"}</h3>
               <p>{result.resultSummary}</p>
               <div className="relay-result__meta">
                 <span>{siteUrl}</span>
@@ -384,8 +386,8 @@ export function RelayTestPanel({
                 <span>{passCount} 项正常 / {attentionCount} 项需关注</span>
               </div>
             </div>
-            <span className="status-pill" data-tone={riskTone(result.riskLevel)}>
-              {riskLabel(result.riskLevel)} · 风险分 {Math.round(result.riskScore)}
+            <span className="status-pill" data-tone="neutral">
+              分数越高越可信
             </span>
           </div>
 
@@ -439,8 +441,8 @@ export function RelayTestPanel({
                     <span className="status-pill" data-tone={item.status === "succeeded" ? "success" : "danger"}>
                       {item.status === "succeeded" ? "请求完成" : "请求失败"}
                     </span>
-                    <span className="status-pill" data-tone={riskTone(item.riskLevel)}>
-                      {riskLabel(item.riskLevel)}
+                    <span className="status-pill" data-tone="neutral">
+                      分数 {score(trustScore(item.matchScore, item.riskScore), 0)}
                     </span>
                   </div>
                 </article>

@@ -154,6 +154,7 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
         var tests = await db.Queryable<TestRecordEntity>()
             .OrderBy(x => x.TestedAt, OrderByType.Desc)
             .ToListAsync(cancellationToken);
+        var status24hMap = BuildSiteStatus24hMap(tests);
 
         var scored = sites.Select(site =>
         {
@@ -182,7 +183,8 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
                     .Concat(offers.Where(x => x.SiteId == site.Id).Select(x => x.ModelId))
                     .Distinct()
                     .Count(),
-                LatestTestAt = siteTests.FirstOrDefault()?.TestedAt
+                LatestTestAt = siteTests.FirstOrDefault()?.TestedAt,
+                Status24h = status24hMap.GetValueOrDefault(site.Id) ?? BuildEmptySiteStatus24h()
             };
         }).OrderByDescending(x => x.SiteScore).ToList();
 
@@ -448,6 +450,7 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
             ErrorMessage = row.ErrorMessage,
             RiskScore = row.RiskScore,
             RiskLevel = string.IsNullOrWhiteSpace(row.RiskLevel) ? ResolveRiskLevel(row.RiskScore) : row.RiskLevel,
+            MatchScore = row.MatchScore,
             TestedAt = row.TestedAt
         };
     }
@@ -504,6 +507,7 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
             FullResponseMs = entity.FullResponseMs,
             RiskScore = entity.RiskScore,
             RiskLevel = entity.RiskLevel,
+            MatchScore = entity.MatchScore,
             TestedAt = entity.CreatedAt
         };
     }
@@ -601,6 +605,132 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
             PageSize = pageSize,
             Total = total
         };
+    }
+
+    private static Dictionary<ulong, PublicSiteStatus24hResponse> BuildSiteStatus24hMap(IReadOnlyList<TestRecordEntity> tests)
+    {
+        var since = DateTime.UtcNow.AddHours(-24);
+        return tests
+            .Where(test =>
+                test.SiteId > 0 &&
+                test.TestedAt >= since &&
+                !string.Equals(test.TestType, "user", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(test.TestType, "self", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(test => test.SiteId)
+            .ToDictionary(group => group.Key, group => BuildSiteStatus24h(group.ToList(), since));
+    }
+
+    private static PublicSiteStatus24hResponse BuildSiteStatus24h(IReadOnlyList<TestRecordEntity> siteTests, DateTime since)
+    {
+        var totalTests = siteTests.Count;
+        var successCount = siteTests.Count(test => IsSuccessStatus(test.Status));
+        var buckets = Enumerable.Range(0, 24)
+            .Select(index => BuildSiteStatusBucket(
+                siteTests.Where(test =>
+                    test.TestedAt >= since.AddHours(index) &&
+                    test.TestedAt < since.AddHours(index + 1))
+                .ToList(),
+                since.AddHours(index)))
+            .ToList();
+
+        return new PublicSiteStatus24hResponse
+        {
+            SuccessRate = totalTests == 0 ? 0 : Math.Round(successCount * 100m / totalTests, 1),
+            TotalTests = totalTests,
+            HealthyCount = buckets.Count(bucket => bucket.StatusTone == "success"),
+            WarningCount = buckets.Count(bucket => bucket.StatusTone == "warning"),
+            CriticalCount = buckets.Count(bucket => bucket.StatusTone == "danger"),
+            LastTestedAt = siteTests.MaxBy(test => test.TestedAt)?.TestedAt,
+            Buckets = buckets
+        };
+    }
+
+    private static PublicSiteStatus24hResponse BuildEmptySiteStatus24h()
+    {
+        var since = DateTime.UtcNow.AddHours(-24);
+        return new PublicSiteStatus24hResponse
+        {
+            Buckets = Enumerable.Range(0, 24)
+                .Select(index => BuildSiteStatusBucket([], since.AddHours(index)))
+                .ToList()
+        };
+    }
+
+    private static PublicSiteStatusBucketResponse BuildSiteStatusBucket(IReadOnlyList<TestRecordEntity> bucketTests, DateTime slotStartAt)
+    {
+        var slotLabel = $"{slotStartAt.AddHours(8):HH}:00";
+        if (bucketTests.Count == 0)
+        {
+            return new PublicSiteStatusBucketResponse
+            {
+                SlotLabel = slotLabel,
+                SlotStartAt = slotStartAt,
+                StatusTone = "neutral",
+                StatusLabel = "暂无测试",
+                HasTest = false
+            };
+        }
+
+        var critical = bucketTests
+            .Where(IsCriticalTest)
+            .OrderByDescending(test => test.TestedAt)
+            .FirstOrDefault();
+        if (critical is not null)
+        {
+            return MapSiteStatusBucket(critical, slotLabel, slotStartAt, "danger", "异常");
+        }
+
+        var warning = bucketTests
+            .Where(IsWarningTest)
+            .OrderByDescending(test => test.TestedAt)
+            .FirstOrDefault();
+        if (warning is not null)
+        {
+            return MapSiteStatusBucket(warning, slotLabel, slotStartAt, "warning", "波动");
+        }
+
+        var healthy = bucketTests
+            .OrderByDescending(test => test.TestedAt)
+            .First();
+        return MapSiteStatusBucket(healthy, slotLabel, slotStartAt, "success", "正常");
+    }
+
+    private static PublicSiteStatusBucketResponse MapSiteStatusBucket(TestRecordEntity test, string slotLabel, DateTime slotStartAt, string tone, string label)
+    {
+        return new PublicSiteStatusBucketResponse
+        {
+            SlotLabel = slotLabel,
+            SlotStartAt = slotStartAt,
+            StatusTone = tone,
+            StatusLabel = label,
+            HasTest = true,
+            TestedAt = test.TestedAt,
+            ModelName = test.ModelName,
+            TestType = test.TestType,
+            Status = test.Status,
+            RiskScore = test.RiskScore
+        };
+    }
+
+    private static bool IsSuccessStatus(string status)
+    {
+        return string.Equals(status, "success", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(status, "succeeded", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsCriticalTest(TestRecordEntity test)
+    {
+        return string.Equals(test.Status, "failed", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(test.Status, "error", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(test.RiskLevel, "high", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(test.RiskLevel, "critical", StringComparison.OrdinalIgnoreCase) ||
+               test.RiskScore >= 51;
+    }
+
+    private static bool IsWarningTest(TestRecordEntity test)
+    {
+        return string.Equals(test.RiskLevel, "medium", StringComparison.OrdinalIgnoreCase) ||
+               (test.RiskScore >= 21 && test.RiskScore < 51);
     }
 
     private sealed record RiskSnapshot(decimal Score, string Level);

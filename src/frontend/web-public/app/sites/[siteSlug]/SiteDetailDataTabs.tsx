@@ -3,16 +3,42 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { getJson, type PublicEnvelope } from "@/lib/api";
-import { formatDateTime, money, riskLabel, riskTone, score } from "@/lib/format";
-import type { SiteDetailResponse } from "./page";
+import { formatDateTime, money, score, trustScore } from "@/lib/format";
 
 type TabKey = "models" | "pricing" | "tests";
-type SiteTestRecord = SiteDetailResponse["latestTests"][number];
+
+type SupportedModel = {
+  modelSlug: string;
+  modelName: string;
+};
+
+type SitePricing = {
+  modelSlug: string;
+  modelName: string;
+  effectiveInputPriceUsd?: number;
+  effectiveOutputPriceUsd?: number;
+};
+
+type SiteTestRecord = {
+  id: number;
+  publicId: string;
+  modelSlug: string;
+  modelName: string;
+  testType: string;
+  status: string;
+  firstTokenMs?: number;
+  fullResponseMs?: number;
+  riskScore?: number;
+  riskLevel: string;
+  matchScore?: number;
+  errorMessage?: string | null;
+  testedAt?: string | null;
+};
 
 type Props = {
-  supportedModels: SiteDetailResponse["supportedModels"];
-  pricing: SiteDetailResponse["pricing"];
-  latestTests: SiteDetailResponse["latestTests"];
+  supportedModels: SupportedModel[];
+  pricing: SitePricing[];
+  latestTests: SiteTestRecord[];
 };
 
 type TestProbeResult = {
@@ -194,7 +220,7 @@ export function SiteDetailDataTabs({ supportedModels, pricing, latestTests }: Pr
                 <th>模型</th>
                 <th>口径 / 状态</th>
                 <th>速度</th>
-                <th>风险</th>
+                <th>分数</th>
                 <th>时间</th>
                 <th>详情</th>
               </tr>
@@ -216,9 +242,10 @@ export function SiteDetailDataTabs({ supportedModels, pricing, latestTests }: Pr
                       <span>完整响应 {formatMs(item.fullResponseMs)}</span>
                     </td>
                     <td>
-                      <span className="status-pill" data-tone={riskTone(item.riskLevel)}>
-                        {riskLabel(item.riskLevel)} {score(item.riskScore)}
+                      <span className="status-pill" data-tone="neutral">
+                        {score(trustScore(item.matchScore, item.riskScore))}
                       </span>
+                      <span>越高越可信</span>
                     </td>
                     <td>{formatDateTime(item.testedAt)}</td>
                     <td>
@@ -277,7 +304,7 @@ function getTotalItems(tab: TabKey, modelCount: number, pricingCount: number, te
   return testCount;
 }
 
-function hasValidPrice(item: SiteDetailResponse["pricing"][number]) {
+function hasValidPrice(item: SitePricing) {
   return (
     typeof item.effectiveInputPriceUsd === "number" &&
     item.effectiveInputPriceUsd >= 0 &&
@@ -341,7 +368,7 @@ function toDetailFallback(item: SiteTestRecord): TestRecordDetail {
     siteName: "",
     siteUrl: null,
     resultSummary: item.errorMessage ?? "正在加载详细检测结果。",
-    matchScore: 0,
+    matchScore: item.matchScore ?? trustScore(null, item.riskScore) ?? 0,
     inputTokens: null,
     outputTokens: null,
     totalTokens: null,
@@ -383,8 +410,8 @@ function SiteTestDetailModal({
           <span className="status-pill" data-tone={statusTone(detail.status)}>
             {loading ? "加载详情中" : statusLabel(detail.status)}
           </span>
-          <span className="status-pill" data-tone={riskTone(detail.riskLevel)}>
-            {riskLabel(detail.riskLevel)} / {score(detail.riskScore)}
+          <span className="status-pill" data-tone="neutral">
+            分数 {score(trustScore(detail.matchScore, detail.riskScore))}
           </span>
           <span className="status-pill" data-tone="neutral">
             {formatDateTime(detail.testedAt)}
@@ -394,7 +421,7 @@ function SiteTestDetailModal({
         <p className="test-detail-copy">{detail.resultSummary || detail.errorMessage || "暂无摘要。"}</p>
 
         <div className="test-detail-grid">
-          <DetailMetric label="匹配度" value={score(detail.matchScore)} />
+          <DetailMetric label="分数" value={score(trustScore(detail.matchScore, detail.riskScore))} />
           <DetailMetric label="首 token" value={formatMs(detail.firstTokenMs)} />
           <DetailMetric label="完整响应" value={formatMs(detail.fullResponseMs)} />
           <DetailMetric label="Tokens/s" value={formatOptionalNumber(detail.tokensPerSecond)} />

@@ -66,9 +66,7 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
                 return FromHttpFailure(response.StatusCode, responseHeaderMs, (int)Math.Min(stopwatch.ElapsedMilliseconds, int.MaxValue), response);
             }
 
-            var probeResponse = request.IsStream
-                ? await ReadStreamingResponseAsync(response, apiType, stopwatch, responseHeaderMs, timeoutCts.Token)
-                : await ReadJsonResponseAsync(response, apiType, stopwatch, responseHeaderMs, timeoutCts.Token);
+            var probeResponse = await ReadResponseAsync(response, apiType, stopwatch, responseHeaderMs, request.IsStream, timeoutCts.Token);
 
             return EvaluateProbeResponse(request, apiType, endpoint, response, probeResponse);
         }
@@ -158,40 +156,53 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         return payload;
     }
 
-    private static async Task<ProbeResponse> ReadJsonResponseAsync(
+    private static async Task<ProbeResponse> ReadResponseAsync(
         HttpResponseMessage response,
         string apiType,
         Stopwatch stopwatch,
         int responseHeaderMs,
+        bool requestedStream,
         CancellationToken cancellationToken)
     {
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         stopwatch.Stop();
 
+        if (requestedStream && TryParseSseProbeResponse(body, apiType, responseHeaderMs, (int)Math.Min(stopwatch.ElapsedMilliseconds, int.MaxValue), out var streamResponse))
+        {
+            return streamResponse;
+        }
+
+        return ParseJsonProbeResponse(body, apiType, responseHeaderMs, (int)Math.Min(stopwatch.ElapsedMilliseconds, int.MaxValue));
+    }
+
+    private static ProbeResponse ParseJsonProbeResponse(string body, string apiType, int responseHeaderMs, int fullResponseMs)
+    {
         using var document = JsonDocument.Parse(body);
         var root = document.RootElement.Clone();
         var content = ExtractMessageContent(root, apiType);
         var usage = ExtractUsage(root, apiType);
         var returnedModel = ExtractReturnedModel(root, apiType);
+        var responseShape = ResolveResponseShape(root, apiType, isStream: false);
 
         return new ProbeResponse(
             responseHeaderMs,
-            (int)Math.Min(stopwatch.ElapsedMilliseconds, int.MaxValue),
+            fullResponseMs,
             content,
             usage,
             returnedModel,
             OpenAiShapeValid: LooksLikeSuccessResponse(root, apiType),
+            ResponseShape: responseShape,
             StreamIntegrityValid: null,
             StreamChunkCount: null,
             StreamDoneSeen: null);
     }
 
-    private static async Task<ProbeResponse> ReadStreamingResponseAsync(
-        HttpResponseMessage response,
+    private static bool TryParseSseProbeResponse(
+        string body,
         string apiType,
-        Stopwatch stopwatch,
         int responseHeaderMs,
-        CancellationToken cancellationToken)
+        int fullResponseMs,
+        out ProbeResponse probeResponse)
     {
         int? firstTokenMs = null;
         var chunkCount = 0;
@@ -200,18 +211,11 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         var contentBuilder = new StringBuilder();
         TokenUsage? usage = null;
         string? returnedModel = null;
+        string responseShape = "unknown";
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var reader = new StreamReader(stream, Encoding.UTF8);
-
-        while (true)
+        using var reader = new StringReader(body);
+        while (reader.ReadLine() is { } line)
         {
-            var line = await reader.ReadLineAsync(cancellationToken);
-            if (line is null)
-            {
-                break;
-            }
-
             if (string.IsNullOrWhiteSpace(line) ||
                 !line.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
             {
@@ -227,10 +231,24 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
 
             using var document = JsonDocument.Parse(data);
             var root = document.RootElement.Clone();
+            var currentShape = ResolveResponseShape(root, apiType, isStream: true);
+            if (currentShape != "unknown")
+            {
+                responseShape = currentShape;
+            }
+
             if (apiType == "anthropic" &&
                 root.TryGetProperty("type", out var eventType) &&
                 eventType.ValueKind == JsonValueKind.String &&
                 eventType.GetString()?.Equals("message_stop", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                doneSeen = true;
+            }
+
+            if (apiType == "openai" &&
+                root.TryGetProperty("type", out var openAiEventType) &&
+                openAiEventType.ValueKind == JsonValueKind.String &&
+                openAiEventType.GetString()?.Equals("response.completed", StringComparison.OrdinalIgnoreCase) == true)
             {
                 doneSeen = true;
             }
@@ -245,7 +263,7 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             returnedModel ??= ExtractReturnedModel(root, apiType);
             if (!string.IsNullOrEmpty(delta))
             {
-                firstTokenMs ??= (int)Math.Min(stopwatch.ElapsedMilliseconds, int.MaxValue);
+                firstTokenMs ??= responseHeaderMs;
                 contentBuilder.Append(delta);
             }
 
@@ -253,19 +271,26 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             chunkCount++;
         }
 
-        stopwatch.Stop();
-        var streamIntegrityValid = chunkCount > 0 && (doneSeen || response.Content.Headers.ContentType?.MediaType?.Contains("event-stream", StringComparison.OrdinalIgnoreCase) == true);
+        if (chunkCount == 0)
+        {
+            probeResponse = null!;
+            return false;
+        }
 
-        return new ProbeResponse(
+        var streamIntegrityValid = doneSeen || HasSseDataLines(body);
+
+        probeResponse = new ProbeResponse(
             firstTokenMs ?? responseHeaderMs,
-            (int)Math.Min(stopwatch.ElapsedMilliseconds, int.MaxValue),
+            fullResponseMs,
             contentBuilder.ToString(),
             usage,
             returnedModel,
             OpenAiShapeValid: shapeValid && chunkCount > 0,
+            ResponseShape: responseShape,
             StreamIntegrityValid: streamIntegrityValid,
             StreamChunkCount: chunkCount,
             StreamDoneSeen: doneSeen);
+        return true;
     }
 
     private static SelfTestExecutionResult EvaluateProbeResponse(
@@ -278,7 +303,7 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         var checks = new List<SelfTestProbeResult>
         {
             Probe("D1", "协议连通性", "协议", "pass", "high", 15, 0, $"真实请求已连通：HTTP {(int)httpResponse.StatusCode}，目标主机 {endpoint.Host}。"),
-            Probe("D2", "响应结构", "协议", response.OpenAiShapeValid ? "pass" : "warn", "high", response.OpenAiShapeValid ? 20 : 0, response.OpenAiShapeValid ? 0 : 35, BuildResponseShapeEvidence(apiType, response.OpenAiShapeValid, request.IsStream))
+            Probe("D2", "响应结构", "协议", response.OpenAiShapeValid ? "pass" : "warn", "high", response.OpenAiShapeValid ? 20 : 0, response.OpenAiShapeValid ? 0 : 35, BuildResponseShapeEvidence(apiType, response.OpenAiShapeValid, response.ResponseShape))
         };
 
         checks.Add(BuildContentIntegrityProbe(response.Content));
@@ -549,31 +574,39 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         {
             var attentionCodes = failed.Concat(warned).Distinct().ToArray();
             return attentionCodes.Length == 0
-                ? $"真实请求已完成，综合得分 {matchScore:0.#}。API Key 未落库，自助测试不进入公共排行。"
-                : $"真实请求已完成，综合得分 {matchScore:0.#}。需要人工关注的检测项：{string.Join(", ", attentionCodes)}。这些项目会影响分数和可信度，但不代表接口请求失败。";
+                ? $"真实请求已完成，分数 {matchScore:0.#}，分数越高表示结果越可信。API Key 未落库，自助测试不进入公共排行。"
+                : $"真实请求已完成，分数 {matchScore:0.#}，分数越高表示结果越可信。需要人工关注的检测项：{string.Join(", ", attentionCodes)}，这些项目会影响分数，但不代表接口请求失败。";
         }
 
         return failed.Length == 0
-            ? $"请求未完成，综合得分 {matchScore:0.#}。"
-            : $"请求未完成，综合得分 {matchScore:0.#}，失败项：{string.Join(", ", failed)}。";
+            ? $"请求未完成，分数 {matchScore:0.#}。"
+            : $"请求未完成，分数 {matchScore:0.#}，失败项：{string.Join(", ", failed)}。";
     }
 
-    private static string BuildResponseShapeEvidence(string apiType, bool isValid, bool isStream)
+    private static string BuildResponseShapeEvidence(string apiType, bool isValid, string responseShape)
     {
         if (apiType == "anthropic")
         {
             return isValid
-                ? isStream
+                ? responseShape == "anthropic_stream"
                     ? "Anthropic Messages 流式响应结构有效：检测到 SSE 事件和文本增量。这里检查的是 Claude/Anthropic 协议，不是 OpenAI choices。"
                     : "Anthropic Messages 响应结构有效：检测到 content 数组和文本内容。这里检查的是 Claude/Anthropic 协议，不是 OpenAI choices。"
                 : "Anthropic Messages 响应结构不完整：未检测到预期的 content 数组、文本内容或流式事件。";
         }
 
-        return isValid
-            ? isStream
-                ? "OpenAI Chat Completions 流式响应结构有效：检测到 choices/delta 数据片段。"
-                : "OpenAI Chat Completions 响应结构有效：检测到 choices/message/content。"
-            : "OpenAI Chat Completions 响应结构不完整：未检测到 choices/message/delta。";
+        if (!isValid)
+        {
+            return "OpenAI 响应结构不完整：未检测到 Responses API 的 output/output_text/response 事件，也未检测到 Chat Completions 的 choices/message/delta。";
+        }
+
+        return responseShape switch
+        {
+            "openai_response_stream" => "OpenAI Responses API 流式响应结构有效：检测到 response.* SSE 事件和文本增量；不再要求 choices/message/delta。",
+            "openai_response" => "OpenAI Responses API 响应结构有效：检测到 output/output_text 文本内容；不再要求 choices/message/content。",
+            "openai_chat_stream" => "OpenAI Chat Completions 流式响应结构有效：检测到 choices/delta 数据片段。",
+            "openai_chat" => "OpenAI Chat Completions 响应结构有效：检测到 choices/message/content。",
+            _ => "OpenAI 响应结构有效：已识别为兼容的模型输出结构。"
+        };
     }
 
     private static decimal? CalculateTokensPerSecond(int? outputTokens, int fullResponseMs)
@@ -724,14 +757,44 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
     {
         return apiType == "anthropic"
             ? LooksLikeAnthropicMessage(root)
-            : LooksLikeOpenAiChatCompletion(root);
+            : LooksLikeOpenAiChatCompletion(root) || LooksLikeOpenAiResponse(root);
     }
 
     private static bool LooksLikeStreamDelta(JsonElement root, string apiType)
     {
         return apiType == "anthropic"
             ? LooksLikeAnthropicStreamEvent(root)
-            : LooksLikeOpenAiStreamDelta(root);
+            : LooksLikeOpenAiStreamDelta(root) || LooksLikeOpenAiResponseStreamEvent(root);
+    }
+
+    private static string ResolveResponseShape(JsonElement root, string apiType, bool isStream)
+    {
+        if (apiType == "anthropic")
+        {
+            if (isStream && LooksLikeAnthropicStreamEvent(root))
+            {
+                return "anthropic_stream";
+            }
+
+            return LooksLikeAnthropicMessage(root) ? "anthropic_message" : "unknown";
+        }
+
+        if (isStream && LooksLikeOpenAiResponseStreamEvent(root))
+        {
+            return "openai_response_stream";
+        }
+
+        if (isStream && LooksLikeOpenAiStreamDelta(root))
+        {
+            return "openai_chat_stream";
+        }
+
+        if (LooksLikeOpenAiResponse(root))
+        {
+            return "openai_response";
+        }
+
+        return LooksLikeOpenAiChatCompletion(root) ? "openai_chat" : "unknown";
     }
 
     private static bool LooksLikeOpenAiChatCompletion(JsonElement root)
@@ -748,6 +811,26 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         return root.TryGetProperty("choices", out var choices) &&
             choices.ValueKind == JsonValueKind.Array &&
             choices.GetArrayLength() > 0;
+    }
+
+    private static bool LooksLikeOpenAiResponse(JsonElement root)
+    {
+        if (root.TryGetProperty("output_text", out var outputText) &&
+            outputText.ValueKind == JsonValueKind.String)
+        {
+            return true;
+        }
+
+        return root.TryGetProperty("output", out var output) &&
+            output.ValueKind == JsonValueKind.Array &&
+            output.GetArrayLength() > 0;
+    }
+
+    private static bool LooksLikeOpenAiResponseStreamEvent(JsonElement root)
+    {
+        return root.TryGetProperty("type", out var type) &&
+            type.ValueKind == JsonValueKind.String &&
+            type.GetString()?.StartsWith("response.", StringComparison.OrdinalIgnoreCase) == true;
     }
 
     private static bool LooksLikeAnthropicMessage(JsonElement root)
@@ -770,6 +853,12 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             return ExtractAnthropicMessageContent(root);
         }
 
+        var responseContent = ExtractOpenAiResponseContent(root);
+        if (!string.IsNullOrEmpty(responseContent))
+        {
+            return responseContent;
+        }
+
         if (root.TryGetProperty("choices", out var choices) &&
             choices.ValueKind == JsonValueKind.Array &&
             choices.GetArrayLength() > 0 &&
@@ -790,6 +879,12 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             return ExtractAnthropicDeltaContent(root);
         }
 
+        var responseDelta = ExtractOpenAiResponseDeltaContent(root);
+        if (!string.IsNullOrEmpty(responseDelta))
+        {
+            return responseDelta;
+        }
+
         if (root.TryGetProperty("choices", out var choices) &&
             choices.ValueKind == JsonValueKind.Array &&
             choices.GetArrayLength() > 0 &&
@@ -798,6 +893,54 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             content.ValueKind == JsonValueKind.String)
         {
             return content.GetString() ?? string.Empty;
+        }
+
+        return string.Empty;
+    }
+
+    private static string ExtractOpenAiResponseContent(JsonElement root)
+    {
+        if (root.TryGetProperty("output_text", out var outputText) &&
+            outputText.ValueKind == JsonValueKind.String)
+        {
+            return outputText.GetString() ?? string.Empty;
+        }
+
+        if (!root.TryGetProperty("output", out var output) || output.ValueKind != JsonValueKind.Array)
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder();
+        foreach (var outputItem in output.EnumerateArray())
+        {
+            if (!outputItem.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            foreach (var contentItem in content.EnumerateArray())
+            {
+                if (contentItem.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String)
+                {
+                    builder.Append(text.GetString());
+                }
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    private static string ExtractOpenAiResponseDeltaContent(JsonElement root)
+    {
+        if (root.TryGetProperty("delta", out var delta) && delta.ValueKind == JsonValueKind.String)
+        {
+            return delta.GetString() ?? string.Empty;
+        }
+
+        if (root.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String)
+        {
+            return text.GetString() ?? string.Empty;
         }
 
         return string.Empty;
@@ -841,6 +984,14 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             return model.GetString();
         }
 
+        if (apiType == "openai" &&
+            root.TryGetProperty("response", out var response) &&
+            response.TryGetProperty("model", out var responseModel) &&
+            responseModel.ValueKind == JsonValueKind.String)
+        {
+            return responseModel.GetString();
+        }
+
         if (apiType == "anthropic" &&
             root.TryGetProperty("message", out var message) &&
             message.TryGetProperty("model", out var messageModel) &&
@@ -854,6 +1005,13 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
 
     private static TokenUsage? ExtractUsage(JsonElement root, string apiType)
     {
+        if (apiType == "openai" &&
+            root.TryGetProperty("response", out var response) &&
+            response.TryGetProperty("usage", out var responseUsage))
+        {
+            return ExtractOpenAiUsage(responseUsage);
+        }
+
         if (!root.TryGetProperty("usage", out var usage) || usage.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
         {
             return null;
@@ -866,10 +1024,31 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             return new TokenUsage(input, output, input.HasValue || output.HasValue ? (input ?? 0) + (output ?? 0) : null);
         }
 
+        return ExtractOpenAiUsage(usage);
+    }
+
+    private static TokenUsage ExtractOpenAiUsage(JsonElement usage)
+    {
+        var input = TryGetInt(usage, "prompt_tokens") ?? TryGetInt(usage, "input_tokens");
+        var output = TryGetInt(usage, "completion_tokens") ?? TryGetInt(usage, "output_tokens");
         return new TokenUsage(
-            TryGetInt(usage, "prompt_tokens") ?? TryGetInt(usage, "input_tokens"),
-            TryGetInt(usage, "completion_tokens") ?? TryGetInt(usage, "output_tokens"),
-            TryGetInt(usage, "total_tokens"));
+            input,
+            output,
+            TryGetInt(usage, "total_tokens") ?? (input.HasValue || output.HasValue ? (input ?? 0) + (output ?? 0) : null));
+    }
+
+    private static bool HasSseDataLines(string body)
+    {
+        using var reader = new StringReader(body);
+        while (reader.ReadLine() is { } line)
+        {
+            if (line.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static TokenUsage? MergeUsage(TokenUsage? current, TokenUsage? next)
@@ -987,6 +1166,7 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         TokenUsage? Usage,
         string? ReturnedModel,
         bool OpenAiShapeValid,
+        string ResponseShape,
         bool? StreamIntegrityValid,
         int? StreamChunkCount,
         bool? StreamDoneSeen);

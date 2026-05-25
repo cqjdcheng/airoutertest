@@ -24,7 +24,7 @@ export function HomeTestWorkbench({ popularModels = [] }: { popularModels?: Popu
         <div>
           <p className="eyebrow">Self Test</p>
           <h2 className="section-title">直接测试中转接口</h2>
-          <p className="section-copy">填写接口地址、Key 和目标模型，立即发起一次真实连通性与风险检测。站长保证不保存任何信息，但是还是建议您申请一个临时key用完后销毁。</p>
+          <p className="section-copy">填写接口地址、Key 和目标模型，立即发起一次真实连通性与可信分数检测。站长保证不保存任何信息，但是还是建议您申请一个临时key用完后销毁。</p>
         </div>
       </div>
 

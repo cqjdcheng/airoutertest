@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { HomeCheapestTabs, type CheapestRankingGroup } from "@/app/components/HomeCheapestTabs";
+import { HomeWeatherBarometer } from "@/app/components/HomeWeatherBarometer";
 import { HomeTestWorkbench } from "@/app/components/HomeTestWorkbench";
 import { PublicHeader } from "@/app/components/PublicHeader";
 import { getJson, type PublicEnvelope } from "@/lib/api";
@@ -19,6 +20,23 @@ type HomeOverview = {
     modelCount: number;
     testCount: number;
     latestTestAt?: string | null;
+  };
+  weather?: {
+    windowHours: number;
+    weatherCode: string;
+    weatherLabel: string;
+    summary: string;
+    successRate: number;
+    totalTests: number;
+    successCount: number;
+    failedCount: number;
+    activeSiteCount: number;
+    degradedSiteCount: number;
+    highRiskSiteCount: number;
+    activeModelCount: number;
+    averageFirstTokenMs?: number | null;
+    lastTestedAt?: string | null;
+    highlights: string[];
   };
 };
 
@@ -52,9 +70,9 @@ export default async function HomePage() {
         <section className="home-hero home-hero--focused">
           <div className="home-hero__content">
             <p className="eyebrow">Relay Intelligence</p>
-            <h1 className="display-title mt-4">先看低价，再看风险</h1>
+            <h1 className="display-title mt-4">先看低价，再看分数</h1>
             <p className="body-lead mt-5 max-w-3xl">
-              按模型查看当前低价中转，同时保留风险、稳定性和最近测试记录。任何中转站都建议先小额试用，避免囤积余额。
+              按模型查看当前低价中转，同时保留分数、稳定性和最近测试记录。分数越高表示越可信，任何中转站都建议先小额试用。
             </p>
             <div className="hero-actions">
               <Link href="/rankings" className="primary-button">
@@ -84,6 +102,7 @@ export default async function HomePage() {
             </div>
           </div>
         </section>
+        <HomeWeatherBarometer weather={overview?.weather} />
         <div id="self-test">
           <HomeTestWorkbench popularModels={overview?.popularModels ?? []} />
         </div>

@@ -32,6 +32,8 @@ public sealed class PublicTestRecordListItemResponse
 
     public string RiskLevel { get; init; } = "low";
 
+    public decimal MatchScore { get; init; }
+
     public DateTime TestedAt { get; init; }
 }
 
@@ -132,6 +134,50 @@ public sealed class PublicRelaySiteRankingItemResponse
     public int CoveredModelCount { get; init; }
 
     public DateTime? LatestTestAt { get; init; }
+
+    public PublicSiteStatus24hResponse Status24h { get; init; } = new();
+}
+
+public sealed class PublicSiteStatus24hResponse
+{
+    public int WindowHours { get; init; } = 24;
+
+    public decimal SuccessRate { get; init; }
+
+    public int TotalTests { get; init; }
+
+    public int HealthyCount { get; init; }
+
+    public int WarningCount { get; init; }
+
+    public int CriticalCount { get; init; }
+
+    public DateTime? LastTestedAt { get; init; }
+
+    public IReadOnlyList<PublicSiteStatusBucketResponse> Buckets { get; init; } = [];
+}
+
+public sealed class PublicSiteStatusBucketResponse
+{
+    public string SlotLabel { get; init; } = string.Empty;
+
+    public DateTime SlotStartAt { get; init; }
+
+    public string StatusTone { get; init; } = "neutral";
+
+    public string StatusLabel { get; init; } = "暂无测试";
+
+    public bool HasTest { get; init; }
+
+    public DateTime? TestedAt { get; init; }
+
+    public string? ModelName { get; init; }
+
+    public string? TestType { get; init; }
+
+    public string? Status { get; init; }
+
+    public decimal? RiskScore { get; init; }
 }
 
 public sealed class PublicModelCatalogItemResponse

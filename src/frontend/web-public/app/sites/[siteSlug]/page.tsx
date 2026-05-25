@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { BackLink, PublicHeader } from "@/app/components/PublicHeader";
+import { SiteStatusTimeline, type SiteStatus24h } from "@/app/components/SiteStatus24h";
 import { getJson, type PublicEnvelope } from "@/lib/api";
-import { formatDateTime, money, riskLabel, riskTone, score } from "@/lib/format";
+import { formatDateTime, money, score, trustScore } from "@/lib/format";
 import { SiteDetailDataTabs } from "./SiteDetailDataTabs";
 
 export const dynamic = "force-dynamic";
@@ -42,9 +43,11 @@ export type SiteDetailResponse = {
     fullResponseMs?: number;
     riskScore?: number;
     riskLevel: string;
+    matchScore?: number;
     errorMessage?: string | null;
     testedAt?: string | null;
   }>;
+  status24h: SiteStatus24h;
   riskSummary: {
     maxRiskScore?: number;
     riskLevel: string;
@@ -64,6 +67,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
   const supportedModels = payload?.supportedModels ?? [];
   const pricing = payload?.pricing ?? [];
   const latestTests = payload?.latestTests ?? [];
+  const status24h = payload?.status24h;
   const validInputPrices = pricing
     .map((item) => item.effectiveInputPriceUsd)
     .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0);
@@ -109,11 +113,11 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
           </div>
 
           <aside className="panel-card p-6">
-            <div className="text-sm text-[var(--text-secondary)]">风险状态</div>
+            <div className="text-sm text-[var(--text-secondary)]">站点分数</div>
             <div className="mt-3 flex items-center justify-between gap-3">
-              <div className="text-3xl font-semibold tracking-tight">{riskLabel(payload?.riskSummary.riskLevel)}</div>
-              <span className="status-pill" data-tone={riskTone(payload?.riskSummary.riskLevel)}>
-                {score(payload?.riskSummary.maxRiskScore)} 分
+              <div className="text-3xl font-semibold tracking-tight">{score(trustScore(null, payload?.riskSummary.maxRiskScore), 0)}</div>
+              <span className="status-pill" data-tone="neutral">
+                分数越高越可信
               </span>
             </div>
             <div className="mt-6 grid grid-cols-3 gap-3 text-center text-sm">
@@ -129,6 +133,10 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
           <SummaryCard title="价格摘要" value={minInputPrice === null ? "暂无价格" : `${money(minInputPrice)} 起`} note={`输出最低 ${minOutputPrice === null ? "-" : money(minOutputPrice)}，共 ${pricing.length} 条价格`} />
           <SummaryCard title="最近测试摘要" value={latestTest ? statusLabel(latestTest.status) : "暂无测试"} note={latestTest ? `${latestTest.modelName} · ${formatDateTime(latestTest.testedAt)}` : "还没有平台测试记录"} />
           <SummaryCard title="站点能力" value={payload?.site.status === "active" ? "已收录" : payload?.site.status ?? "未知"} note={`${payload?.site.supportsInvoice ? "可开票" : "不开票"} · ${payload?.site.supportsRefund ? "可退款" : "不支持退款"} · ${payload?.site.hasDocs ? "有文档" : "无文档"}`} />
+        </section>
+
+        <section className="mt-6">
+          <SiteStatusTimeline status24h={status24h} />
         </section>
 
         <section className="mt-6 grid gap-6 lg:grid-cols-[1fr_0.95fr]">
@@ -173,9 +181,9 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
             </p>
           </div>
           <div className="panel-card p-6">
-            <h2 className="text-xl font-semibold tracking-tight">风险解释</h2>
+            <h2 className="text-xl font-semibold tracking-tight">分数说明</h2>
             <p className="mt-3 text-sm leading-7 text-[var(--text-secondary)]">
-              风险摘要来自模型替换、响应异常、价格虚标、稳定性波动等证据。前台展示摘要，后台保留证据明细用于复核。
+              分数综合模型替换、响应异常、价格虚标、稳定性波动等证据，分数越高表示当前站点越可信。
             </p>
           </div>
           <div className="panel-card p-6">

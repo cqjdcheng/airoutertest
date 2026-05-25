@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { money, percent, riskLabel, riskTone, score } from "@/lib/format";
+import { money, trustScore, score } from "@/lib/format";
 
 export type CheapestRankingGroup = {
   modelSlug: string;
@@ -48,7 +48,7 @@ export function HomeCheapestTabs({ groups }: { groups: CheapestRankingGroup[] })
             <tr>
               <th>站点</th>
               <th>中转价（USD/M）</th>
-              <th>稳定 / 风险</th>
+              <th>分数</th>
               <th>特点</th>
               <th>操作</th>
             </tr>
@@ -73,11 +73,10 @@ export function HomeCheapestTabs({ groups }: { groups: CheapestRankingGroup[] })
                       <span>输入 / 输出</span>
                     </td>
                     <td>
-                      {/* <span>可用 {percent(item.availability24h)}</span>
-                      <span>稳定 {percent(item.stability7d)}</span> */}
-                      <span className="status-pill" data-tone={riskTone(item.riskLevel)}>
-                        {riskLabel(item.riskLevel)} {score(item.riskScore)}
+                      <span className="status-pill" data-tone="neutral">
+                        {score(trustScore(null, item.riskScore))}
                       </span>
+                      <span>越高越可信</span>
                     </td>
                     <td>
                       {enterpriseBadges.length ? enterpriseBadges.join(" / ") : "-"}

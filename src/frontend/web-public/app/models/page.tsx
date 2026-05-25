@@ -2,7 +2,7 @@ import Link from "next/link";
 import { PublicHeader } from "@/app/components/PublicHeader";
 import { PublicPageHero } from "@/app/components/PublicPageHero";
 import { getJson, type PublicEnvelope } from "@/lib/api";
-import { money, riskLabel, riskTone, score } from "@/lib/format";
+import { money, score, trustScore } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +43,7 @@ export default async function ModelsPage() {
         <PublicPageHero
           eyebrow="Model Directory"
           title="模型大全"
-          description="按模型维度聚合官方定价、当前最便宜中转、稳定性和风险摘要，适合“我先确定模型，再找站”的决策方式。"
+          description="按模型维度聚合官方定价、当前最便宜中转、稳定性和统一分数，适合“我先确定模型，再找站”的决策方式。"
           aside={
             <>
               <div className="metric-card">
@@ -67,7 +67,7 @@ export default async function ModelsPage() {
                   <th>官方价</th>
                   <th>最便宜中转</th>
                   <th>中转价</th>
-                  <th>稳定 / 风险</th>
+                  <th>稳定 / 分数</th>
                   <th>操作</th>
                 </tr>
               </thead>
@@ -99,8 +99,8 @@ export default async function ModelsPage() {
                       </td>
                       <td>
                         稳定 {score(item.stabilityScore)}
-                        <span className="status-pill" data-tone={riskTone(item.riskLevel)}>
-                          {riskLabel(item.riskLevel)} {score(item.riskScore)}
+                        <span className="status-pill" data-tone="neutral">
+                          分数 {score(trustScore(null, item.riskScore))}
                         </span>
                       </td>
                       <td>

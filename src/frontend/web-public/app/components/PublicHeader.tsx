@@ -13,10 +13,10 @@ export function PublicHeader({ featuredModel: _featuredModel = "gpt-4-1-mini" }:
     { href: "/sites", label: "中转站" },
     { href: "/models", label: "所有模型" },
     { href: "/tests", label: "测试记录" },
-    // { href: "/rankings", label: "价格排行" },
-    // { href: "/capabilities", label: "能力榜" },
-    { href: "/articles", label: "最新AI资讯" }
+    { href: "/contact", label: "联系我" },
+    { href: "/articles", label: "最新 AI 资讯" }
   ];
+
   return (
     <header className="site-header">
       <div className="public-container site-header__inner">
