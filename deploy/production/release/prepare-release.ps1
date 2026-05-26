@@ -93,7 +93,7 @@ $manifestPath = Join-Path $releaseDir "manifest.json"
 $shaPath = Join-Path $releaseDir "SHA256SUMS"
 
 $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
-$shaLines | Set-Content -LiteralPath $shaPath -Encoding ASCII
+[System.IO.File]::WriteAllText($shaPath, (($shaLines -join "`n") + "`n"), [System.Text.Encoding]::ASCII)
 
 Write-Host "Release tag: $ReleaseTag"
 Write-Host "Release directory: $releaseDir"

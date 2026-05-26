@@ -27,6 +27,43 @@ public sealed class OpenAiCompatibleSelfTestRunnerTests
     }
 
     [Fact]
+    public void BuildProbePayload_ShouldUseClaudeCodeStyleBlocks_ForAnthropic()
+    {
+        var payload = BuildProbePayload(new CreateSelfTestRequest
+        {
+            SiteUrl = "https://relay.example.com",
+            ModelName = "claude-code-4.7",
+            ApiKey = "sk-test",
+            ApiType = "anthropic",
+            IsStream = true
+        }, "anthropic");
+
+        var json = JsonSerializer.Serialize(payload);
+
+        json.Should().Contain("\"system\"");
+        json.Should().Contain("Claude Code");
+        json.Should().Contain("\"content\":[{\"type\":\"text\"");
+        json.Should().Contain("\"metadata\"");
+    }
+
+    [Fact]
+    public void ApplyAuthHeaders_ShouldMimicClaudeCodeCli_ForAnthropic()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://relay.example.com/v1/messages");
+
+        ApplyAuthHeaders(request, "anthropic", "sk-test");
+
+        request.Headers.GetValues("x-api-key").Should().Contain("sk-test");
+        request.Headers.Authorization.Should().NotBeNull();
+        request.Headers.Authorization!.Scheme.Should().Be("Bearer");
+        request.Headers.Authorization.Parameter.Should().Be("sk-test");
+        request.Headers.GetValues("anthropic-version").Should().Contain("2023-06-01");
+        request.Headers.GetValues("anthropic-beta").Should().Contain("claude-code-20250219");
+        request.Headers.GetValues("x-claude-code-session-id").Should().Contain("cheapai-self-test");
+        request.Headers.UserAgent.ToString().Should().Contain("claude-code");
+    }
+
+    [Fact]
     public void BuildProbePayload_ShouldKeepDeterministicTemperature_ForOpenAi()
     {
         var payload = BuildProbePayload(new CreateSelfTestRequest
@@ -84,6 +121,54 @@ public sealed class OpenAiCompatibleSelfTestRunnerTests
         probe.Code.Should().Be("D9");
         probe.Status.Should().Be("warn");
         probe.RiskImpact.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void CalculateSelfTestScore_ShouldDeductWarningsAndUnknownEvidence()
+    {
+        var checks = new[]
+        {
+            new SelfTestProbeResult { Code = "D1", Name = "协议连通性", Category = "协议", Status = "pass", Confidence = "high", ScoreImpact = 15, RiskImpact = 0 },
+            new SelfTestProbeResult { Code = "D8", Name = "响应时延", Category = "性能", Status = "warn", Confidence = "medium", ScoreImpact = 5, RiskImpact = 8 },
+            new SelfTestProbeResult { Code = "S1", Name = "Token 用量", Category = "安全", Status = "warn", Confidence = "medium", ScoreImpact = 0, RiskImpact = 18 },
+            new SelfTestProbeResult { Code = "D3", Name = "身份一致性", Category = "身份", Status = "unknown", Confidence = "low", ScoreImpact = 0, RiskImpact = 6 }
+        };
+
+        var score = CalculateSelfTestScore(checks);
+
+        score.MatchScore.Should().Be(68);
+        score.RiskScore.Should().Be(32);
+        score.RiskLevel.Should().Be("medium");
+    }
+
+    [Fact]
+    public void BuildIdentityProbe_ShouldDeduct_WhenIdentityCannotBeRead()
+    {
+        var probe = BuildIdentityProbe("claude-opus-4.7", """{"knowledge_answer":"9.8"}""");
+
+        probe.Code.Should().Be("D3");
+        probe.Status.Should().Be("unknown");
+        probe.RiskImpact.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void BuildSummary_ShouldUseProbeNamesAndDeductionText()
+    {
+        var checks = new[]
+        {
+            new SelfTestProbeResult { Code = "D8", Name = "响应时延", Category = "性能", Status = "warn", Confidence = "medium", ScoreImpact = 5, RiskImpact = 8 },
+            new SelfTestProbeResult { Code = "S1", Name = "Token 用量", Category = "安全", Status = "warn", Confidence = "medium", ScoreImpact = 0, RiskImpact = 18 },
+            new SelfTestProbeResult { Code = "D3", Name = "身份一致性", Category = "身份", Status = "unknown", Confidence = "low", ScoreImpact = 0, RiskImpact = 6 }
+        };
+
+        var summary = BuildSummary("succeeded", 68, checks);
+
+        summary.Should().Contain("响应时延-扣8");
+        summary.Should().Contain("Token 用量-扣18");
+        summary.Should().Contain("身份一致性-扣6");
+        summary.Should().NotContain("D8");
+        summary.Should().NotContain("S1");
+        summary.Should().NotContain("D3");
     }
 
     [Fact]
@@ -150,6 +235,26 @@ public sealed class OpenAiCompatibleSelfTestRunnerTests
     private static SelfTestProbeResult BuildFullModelProbe(string requestedModel, string? returnedModel, string content)
     {
         return InvokePrivate<SelfTestProbeResult>("BuildFullModelProbe", requestedModel, returnedModel, content);
+    }
+
+    private static (decimal MatchScore, decimal RiskScore, string RiskLevel) CalculateSelfTestScore(IReadOnlyList<SelfTestProbeResult> checks)
+    {
+        return InvokePrivate<(decimal MatchScore, decimal RiskScore, string RiskLevel)>("CalculateSelfTestScore", checks);
+    }
+
+    private static SelfTestProbeResult BuildIdentityProbe(string requestedModel, string content)
+    {
+        return InvokePrivate<SelfTestProbeResult>("BuildIdentityProbe", requestedModel, content);
+    }
+
+    private static string BuildSummary(string status, decimal matchScore, IReadOnlyList<SelfTestProbeResult> checks)
+    {
+        return InvokePrivate<string>("BuildSummary", status, matchScore, checks);
+    }
+
+    private static void ApplyAuthHeaders(HttpRequestMessage request, string apiType, string apiKey)
+    {
+        InvokePrivate<object?>("ApplyAuthHeaders", request, apiType, apiKey);
     }
 
     private static string? ExtractReturnedModel(JsonElement root, string apiType)

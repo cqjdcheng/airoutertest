@@ -6,6 +6,7 @@ import { RelayTestPanel, type ModelOption } from "@/app/components/RelayTestPane
 import { formatDateTime, score, trustScore } from "@/lib/format";
 import { getJson, type PublicEnvelope } from "@/lib/api";
 import { readSelfTestHistory, subscribeSelfTestHistory, type SelfTestHistoryItem } from "@/lib/selfTestHistory";
+import { selfTestConfidenceLabel, selfTestDeductionLabel, selfTestDisplayIndex, selfTestStatusLabel } from "@/lib/selfTestLabels";
 
 export type TestRecord = {
   id: number;
@@ -413,15 +414,15 @@ function TestDetailModal({
           <h3>检测项</h3>
           {detail.checks.length ? (
             <div className="probe-grid">
-              {detail.checks.map((check) => (
+              {detail.checks.map((check, index) => (
                 <article className="probe-card" data-status={check.status} key={`${check.code}-${check.name}`}>
                   <div>
-                    <strong>{check.code}</strong>
+                    <strong>{selfTestDisplayIndex(index)}</strong>
                     <span>{check.category}</span>
                   </div>
                   <h4>{check.name}</h4>
                   <p>{check.evidence}</p>
-                  <small>{probeStatusLabel(check.status)} · {confidenceLabel(check.confidence)}</small>
+                  <small>{selfTestStatusLabel(check.status)} · {selfTestConfidenceLabel(check.confidence)} · {selfTestDeductionLabel(check)}</small>
                 </article>
               ))}
             </div>
@@ -526,20 +527,6 @@ function testTypeLabel(testType: string) {
   if (testType === "user" || testType === "self") return "用户主动测试";
   if (testType === "platform" || testType === "system" || testType === "auto") return "系统自动测试";
   return testType || "未知口径";
-}
-
-function probeStatusLabel(status: string) {
-  if (status === "pass") return "正常";
-  if (status === "warn") return "需关注";
-  if (status === "fail") return "请求失败";
-  return "未检测";
-}
-
-function confidenceLabel(confidence: string) {
-  if (confidence === "high") return "依据充分";
-  if (confidence === "medium") return "一般参考";
-  if (confidence === "low") return "辅助参考";
-  return "参考信息";
 }
 
 function formatMs(value?: number | null) {

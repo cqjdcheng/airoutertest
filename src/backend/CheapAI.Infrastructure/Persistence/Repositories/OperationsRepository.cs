@@ -16,6 +16,7 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
 {
     public async Task<PagedResult<RelayOfferListItemResponse>> GetOffersAsync(OperationListQuery query, CancellationToken cancellationToken = default)
     {
+        query = NormalizeQuery(query);
         RefAsync<int> total = 0;
         var items = await db.Queryable<RelayOfferEntity, RelaySiteEntity, AiModelEntity>(
                 (offer, site, model) => new JoinQueryInfos(
@@ -47,14 +48,31 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
 
     public async Task<PagedResult<TestRecordListItemResponse>> GetTestRecordsAsync(OperationListQuery query, CancellationToken cancellationToken = default)
     {
+        query = NormalizeQuery(query);
         RefAsync<int> total = 0;
-        var rows = await db.Queryable<TestRecordEntity, RelaySiteEntity, AiModelEntity>(
+        var recordsQuery = db.Queryable<TestRecordEntity, RelaySiteEntity, AiModelEntity>(
                 (record, site, model) => new JoinQueryInfos(
                     JoinType.Left, record.SiteId == site.Id,
                     JoinType.Left, record.ModelId == model.Id))
             .Where((record, site, model) =>
                 (record.SiteId == 0 || site.DeletedAt == null) &&
-                (record.ModelId == 0 || model.DeletedAt == null))
+                (record.ModelId == 0 || model.DeletedAt == null));
+
+        if (!string.IsNullOrWhiteSpace(query.Keyword))
+        {
+            var keyword = query.Keyword.Trim();
+            recordsQuery = recordsQuery.Where((record, site, model) =>
+                site.Name.Contains(keyword) ||
+                record.SiteName != null && record.SiteName.Contains(keyword) ||
+                record.SiteUrl != null && record.SiteUrl.Contains(keyword) ||
+                model.DisplayName.Contains(keyword) ||
+                record.ModelName != null && record.ModelName.Contains(keyword) ||
+                record.ModelSlug != null && record.ModelSlug.Contains(keyword) ||
+                record.TestType.Contains(keyword) ||
+                record.Status.Contains(keyword));
+        }
+
+        var rows = await recordsQuery
             .OrderBy((record, site, model) => record.TestedAt, OrderByType.Desc)
             .Select((record, site, model) => new AdminTestRecordQueryRow
             {
@@ -121,6 +139,7 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
 
     public async Task<PagedResult<RiskEvidenceListItemResponse>> GetRisksAsync(OperationListQuery query, CancellationToken cancellationToken = default)
     {
+        query = NormalizeQuery(query);
         RefAsync<int> total = 0;
         var items = await db.Queryable<RiskEvidenceEntity, RelaySiteEntity, AiModelEntity>(
                 (risk, site, model) => new JoinQueryInfos(
@@ -192,6 +211,7 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
 
     public async Task<PagedResult<JobExecutionLogListItemResponse>> GetJobLogsAsync(OperationListQuery query, CancellationToken cancellationToken = default)
     {
+        query = NormalizeQuery(query);
         RefAsync<int> total = 0;
         var items = await db.Queryable<JobExecutionLogEntity>()
             .OrderBy(x => x.CreatedAt, OrderByType.Desc)
@@ -787,6 +807,16 @@ public sealed class OperationsRepository(ISqlSugarClient db, ISelfTestRunner sel
             Page = query.Page,
             PageSize = query.PageSize,
             Total = total
+        };
+    }
+
+    private static OperationListQuery NormalizeQuery(OperationListQuery query)
+    {
+        return new OperationListQuery
+        {
+            Page = Math.Max(1, query.Page),
+            PageSize = Math.Clamp(query.PageSize, 1, 100),
+            Keyword = string.IsNullOrWhiteSpace(query.Keyword) ? null : query.Keyword.Trim()
         };
     }
 

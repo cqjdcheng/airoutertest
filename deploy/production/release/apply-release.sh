@@ -22,11 +22,42 @@ fi
 release_tag="$(basename "$RELEASE_DIR")"
 services=(api jobs public-web admin-web)
 repositories=(realllmcn-api realllmcn-jobs realllmcn-public-web realllmcn-admin-web)
+checksum_file="$RELEASE_DIR/SHA256SUMS"
+
+curl_with_retry() {
+  local description="$1"
+  shift
+  local attempts="${CHEAPAI_HEALTH_CHECK_ATTEMPTS:-12}"
+  local delay_seconds="${CHEAPAI_HEALTH_CHECK_DELAY_SECONDS:-5}"
+  local attempt=1
+
+  while (( attempt <= attempts )); do
+    if curl "$@" >/dev/null 2>&1; then
+      echo "OK: $description"
+      return 0
+    fi
+
+    if (( attempt == attempts )); then
+      echo "FAILED: $description" >&2
+      curl "$@" >/dev/null
+      return 1
+    fi
+
+    sleep "$delay_seconds"
+    attempt=$((attempt + 1))
+  done
+}
 
 echo "--- verify release package ---"
 (
   cd "$RELEASE_DIR"
-  sha256sum -c SHA256SUMS
+  if grep -q $'\r' "$checksum_file"; then
+    tmp_checksum="$(mktemp)"
+    tr -d '\015' < "$checksum_file" > "$tmp_checksum"
+    cat "$tmp_checksum" > "$checksum_file"
+    rm -f "$tmp_checksum"
+  fi
+  sha256sum -c "$checksum_file"
 )
 
 cd "$COMPOSE_DIR"
@@ -54,15 +85,15 @@ if docker ps --format '{{.Names}}' | grep -qx 'cheapai-proxy'; then
 fi
 
 echo "--- local health checks ---"
-curl -fsS http://127.0.0.1:18080/api/health >/dev/null
-curl -fsSI http://127.0.0.1:13000/ >/dev/null
-curl -fsSI http://127.0.0.1:18081/ >/dev/null
+curl_with_retry "local api health" -fsS --max-time 10 http://127.0.0.1:18080/api/health
+curl_with_retry "local public web" -fsSI --max-time 10 http://127.0.0.1:13000/
+curl_with_retry "local admin web" -fsSI --max-time 10 http://127.0.0.1:18081/
 
 echo "--- public health checks ---"
-curl -fsSI https://www.realllm.cn/ >/dev/null
-curl -fsSI https://www.realllm.cn/sites >/dev/null
-curl -fsS https://www.realllm.cn/api/health >/dev/null
-curl -fsSI https://admin.realllm.cn/ >/dev/null
+curl_with_retry "public home" -fsSI --max-time 10 https://www.realllm.cn/
+curl_with_retry "public sites" -fsSI --max-time 10 https://www.realllm.cn/sites
+curl_with_retry "public api health" -fsS --max-time 10 https://www.realllm.cn/api/health
+curl_with_retry "admin home" -fsSI --max-time 10 https://admin.realllm.cn/
 
 echo "--- compose ps ---"
 docker compose --env-file .env ps

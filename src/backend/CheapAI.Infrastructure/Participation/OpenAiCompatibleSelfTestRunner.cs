@@ -99,12 +99,13 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
     private static Dictionary<string, object?> BuildProbePayload(CreateSelfTestRequest request, string apiType)
     {
         var modelName = NormalizeModelNameForApi(request.ModelName, apiType);
-        var prompt = """
+        var protocolAck = apiType == "anthropic" ? "anthropic-messages-compatible" : "openai-chat-completions-compatible";
+        var prompt = $$"""
                     CheapAI relay verification probe. Return strict JSON only, without Markdown fences:
                     {
                       "model_claim": "the model identity you claim",
                       "knowledge_answer": "answer only 9.11 or 9.8: which number is larger?",
-                      "protocol_ack": "openai-chat-completions-compatible",
+                      "protocol_ack": "{{protocolAck}}",
                       "format_ack": "json-ok",
                       "short_answer": "OK"
                     }
@@ -112,19 +113,39 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
 
         if (apiType == "anthropic")
         {
+            var systemPrompt = "You are Claude Code running a CheapAI compatibility probe. Behave like the Claude CLI assistant, but return only the requested JSON object.";
             return new Dictionary<string, object?>
             {
                 ["model"] = modelName,
+                ["system"] = new object[]
+                {
+                    new
+                    {
+                        type = "text",
+                        text = systemPrompt
+                    }
+                },
                 ["messages"] = new object[]
                 {
                     new
                     {
                         role = "user",
-                        content = prompt
+                        content = new object[]
+                        {
+                            new
+                            {
+                                type = "text",
+                                text = prompt
+                            }
+                        }
                     }
                 },
                 ["max_tokens"] = 260,
-                ["stream"] = request.IsStream
+                ["stream"] = request.IsStream,
+                ["metadata"] = new
+                {
+                    user_id = "cheapai-self-test"
+                }
             };
         }
 
@@ -334,10 +355,8 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             checks.Add(Probe("S5", "流完整性", "安全", "unknown", "high", 0, 0, "本次使用非流式请求，未检测 SSE 流完整性。"));
         }
 
-        var matchScore = Math.Clamp(checks.Sum(x => x.ScoreImpact), 0, 100);
-        var riskScore = Math.Clamp(100 - matchScore + checks.Sum(x => x.RiskImpact), 0, 100);
+        var score = CalculateSelfTestScore(checks);
         var status = "succeeded";
-        var riskLevel = riskScore >= 70 ? "high" : riskScore >= 30 ? "medium" : "low";
         var tokensPerSecond = CalculateTokensPerSecond(response.Usage?.OutputTokens, response.FullResponseMs);
 
         return new SelfTestExecutionResult
@@ -345,10 +364,10 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             Status = status,
             FirstTokenMs = response.FirstTokenMs,
             FullResponseMs = response.FullResponseMs,
-            RiskScore = riskScore,
-            RiskLevel = riskLevel,
-            ResultSummary = BuildSummary(status, matchScore, checks),
-            MatchScore = matchScore,
+            RiskScore = score.RiskScore,
+            RiskLevel = score.RiskLevel,
+            ResultSummary = BuildSummary(status, score.MatchScore, checks),
+            MatchScore = score.MatchScore,
             InputTokens = response.Usage?.InputTokens,
             OutputTokens = response.Usage?.OutputTokens,
             TotalTokens = response.Usage?.TotalTokens,
@@ -425,7 +444,7 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
     {
         if (usage is null || usage.TotalTokens is null)
         {
-            return Probe("S1", "Token 用量", "安全", "unknown", "medium", 0, 0, "响应中没有返回 token 用量，无法判断是否存在异常消耗。");
+            return Probe("S1", "Token 用量", "安全", "unknown", "medium", 0, 4, "响应中没有返回 token 用量，无法判断是否存在异常消耗。");
         }
 
         var totalTokens = usage.TotalTokens.Value;
@@ -441,14 +460,14 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
     {
         if (!TryParseProbeJson(content, out var root))
         {
-            return Probe("D3", "身份一致性", "身份", "unknown", "low", 0, 0, "没有读取到模型自述身份，不能据此判断是否冒充。");
+            return Probe("D3", "身份一致性", "身份", "unknown", "low", 0, 6, "没有读取到模型自述身份，不能据此判断是否冒充。");
         }
 
         var claim = TryGetString(root, "model_claim").ToLowerInvariant();
         var expectedFamily = GetExpectedModelFamily(modelName);
         if (string.IsNullOrWhiteSpace(claim) || expectedFamily == "unknown")
         {
-            return Probe("D3", "身份一致性", "身份", "unknown", "low", 0, 0, "模型自述身份信息不足，或目标模型族无法识别，只作为低权重参考。");
+            return Probe("D3", "身份一致性", "身份", "unknown", "low", 0, 6, "模型自述身份信息不足，或目标模型族无法识别，只作为低权重参考。");
         }
 
         var matched = claim.Contains(expectedFamily, StringComparison.OrdinalIgnoreCase) ||
@@ -568,19 +587,79 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
 
     private static string BuildSummary(string status, decimal matchScore, IReadOnlyList<SelfTestProbeResult> checks)
     {
-        var failed = checks.Where(x => x.Status == "fail").Select(x => x.Code).ToArray();
-        var warned = checks.Where(x => x.Status == "warn").Select(x => x.Code).ToArray();
+        var failed = checks.Where(x => x.Status == "fail").Select(x => x.Name).Distinct().ToArray();
+        var attentionItems = checks
+            .Where(x => x.Status is "fail" or "warn" || x.Status == "unknown" && CalculateDeduction(x) > 0)
+            .Select(x =>
+            {
+                var deduction = CalculateDeduction(x);
+                return deduction > 0 ? $"{x.Name}-扣{deduction:0.#}" : x.Name;
+            })
+            .Distinct()
+            .ToArray();
         if (status == "succeeded")
         {
-            var attentionCodes = failed.Concat(warned).Distinct().ToArray();
-            return attentionCodes.Length == 0
+            return attentionItems.Length == 0
                 ? $"真实请求已完成，分数 {matchScore:0.#}，分数越高表示结果越可信。API Key 未落库，自助测试不进入公共排行。"
-                : $"真实请求已完成，分数 {matchScore:0.#}，分数越高表示结果越可信。需要人工关注的检测项：{string.Join(", ", attentionCodes)}，这些项目会影响分数，但不代表接口请求失败。";
+                : $"真实请求已完成，分数 {matchScore:0.#}，分数越高表示结果越可信。扣分项：{string.Join("、", attentionItems)}。这些项目会影响可信分，但不代表接口请求失败。";
         }
 
         return failed.Length == 0
             ? $"请求未完成，分数 {matchScore:0.#}。"
-            : $"请求未完成，分数 {matchScore:0.#}，失败项：{string.Join(", ", failed)}。";
+            : $"请求未完成，分数 {matchScore:0.#}，失败项：{string.Join("、", failed)}。";
+    }
+
+    private static (decimal MatchScore, decimal RiskScore, string RiskLevel) CalculateSelfTestScore(IReadOnlyList<SelfTestProbeResult> checks)
+    {
+        var riskScore = Math.Clamp(checks.Sum(CalculateDeduction), 0, 100);
+        var matchScore = Math.Clamp(100 - riskScore, 0, 100);
+        return (matchScore, riskScore, ResolveSelfTestRiskLevel(riskScore));
+    }
+
+    private static decimal CalculateDeduction(SelfTestProbeResult check)
+    {
+        if (check.Status == "pass")
+        {
+            return 0;
+        }
+
+        var explicitDeduction = Math.Max(0, check.RiskImpact);
+        if (explicitDeduction > 0)
+        {
+            return explicitDeduction;
+        }
+
+        return check.Status switch
+        {
+            "fail" => check.Confidence switch
+            {
+                "high" => 40,
+                "medium" => 25,
+                _ => 12
+            },
+            "warn" => check.Confidence switch
+            {
+                "high" => 18,
+                "medium" => 10,
+                _ => 4
+            },
+            _ => 0
+        };
+    }
+
+    private static string ResolveSelfTestRiskLevel(decimal riskScore)
+    {
+        if (riskScore >= 45)
+        {
+            return "high";
+        }
+
+        if (riskScore >= 15)
+        {
+            return "medium";
+        }
+
+        return "low";
     }
 
     private static string BuildResponseShapeEvidence(string apiType, bool isValid, string responseShape)
@@ -698,8 +777,13 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
     {
         if (apiType == "anthropic")
         {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
             request.Headers.TryAddWithoutValidation("x-api-key", apiKey);
             request.Headers.TryAddWithoutValidation("anthropic-version", "2023-06-01");
+            request.Headers.TryAddWithoutValidation("anthropic-beta", "claude-code-20250219");
+            request.Headers.TryAddWithoutValidation("x-claude-code-session-id", "cheapai-self-test");
+            request.Headers.TryAddWithoutValidation("x-claude-code-client", "cheapai");
+            request.Headers.UserAgent.ParseAdd("claude-code/1.0");
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             return;
         }

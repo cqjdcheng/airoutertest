@@ -208,7 +208,7 @@ public sealed class PublicSiteQueryRepository(ISqlSugarClient db) : IPublicSiteQ
                 ErrorMessage = record.ErrorMessage,
                 TestedAt = record.TestedAt
             })
-            .Take(10)
+            .Take(100)
             .ToListAsync(cancellationToken);
 
         return rows.Select(row => new PublicSiteLatestTestResponse

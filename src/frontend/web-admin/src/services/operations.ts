@@ -108,8 +108,16 @@ export function fetchOffers(page = 1, pageSize = 20) {
   return apiRequest<PagedResult<RelayOfferListItem>>(`/api/v1/admin/offers?page=${page}&pageSize=${pageSize}`);
 }
 
-export function fetchTestRecords(page = 1, pageSize = 20) {
-  return apiRequest<PagedResult<TestRecordListItem>>(`/api/v1/admin/test-records?page=${page}&pageSize=${pageSize}`);
+export function fetchTestRecords(page = 1, pageSize = 20, keyword?: string) {
+  const search = new URLSearchParams({
+    page: String(page),
+    pageSize: String(pageSize)
+  });
+  if (keyword?.trim()) {
+    search.set("keyword", keyword.trim());
+  }
+
+  return apiRequest<PagedResult<TestRecordListItem>>(`/api/v1/admin/test-records?${search.toString()}`);
 }
 
 export function fetchTestRecord(id: number) {

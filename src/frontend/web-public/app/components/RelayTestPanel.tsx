@@ -9,6 +9,7 @@ import {
   subscribeSelfTestHistory,
   type SelfTestHistoryItem
 } from "@/lib/selfTestHistory";
+import { selfTestConfidenceLabel, selfTestDeductionLabel, selfTestDisplayIndex, selfTestStatusLabel } from "@/lib/selfTestLabels";
 
 export type ModelOption = {
   label: string;
@@ -401,15 +402,15 @@ export function RelayTestPanel({
           </div>
 
           <div className="probe-grid mt-5">
-            {result.checks.map((check) => (
+            {result.checks.map((check, index) => (
               <article className="probe-card" data-status={check.status} key={check.code}>
                 <div>
-                  <strong>{check.code}</strong>
+                  <strong>{selfTestDisplayIndex(index)}</strong>
                   <span>{check.category}</span>
                 </div>
                 <h4>{check.name}</h4>
                 <p>{check.evidence}</p>
-                <small>{statusText(check.status)} · {confidenceText(check.confidence)}</small>
+                <small>{selfTestStatusLabel(check.status)} · {selfTestConfidenceLabel(check.confidence)} · {selfTestDeductionLabel(check)}</small>
               </article>
             ))}
           </div>
@@ -480,21 +481,4 @@ function formatMs(value?: number | null) {
 
 function formatNumber(value?: number | null) {
   return typeof value === "number" ? value.toLocaleString("zh-CN") : "-";
-}
-
-function statusText(status: SelfTestProbeResult["status"]) {
-  return {
-    pass: "正常",
-    warn: "需关注",
-    fail: "未达标",
-    unknown: "未检测"
-  }[status];
-}
-
-function confidenceText(confidence: SelfTestProbeResult["confidence"]) {
-  return {
-    high: "依据充分",
-    medium: "一般参考",
-    low: "辅助参考"
-  }[confidence];
 }

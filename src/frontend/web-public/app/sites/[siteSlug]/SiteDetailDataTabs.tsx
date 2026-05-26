@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { getJson, type PublicEnvelope } from "@/lib/api";
 import { formatDateTime, money, score, trustScore } from "@/lib/format";
+import { selfTestConfidenceLabel, selfTestDeductionLabel, selfTestDisplayIndex, selfTestStatusLabel } from "@/lib/selfTestLabels";
 
 type TabKey = "models" | "pricing" | "tests";
 
@@ -331,20 +332,6 @@ function testTypeLabel(testType: string) {
   return testType || "未知测试";
 }
 
-function probeStatusLabel(status: string) {
-  if (status === "pass") return "正常";
-  if (status === "warn") return "需关注";
-  if (status === "fail") return "请求失败";
-  return "未检测";
-}
-
-function confidenceLabel(confidence: string) {
-  if (confidence === "high") return "依据充分";
-  if (confidence === "medium") return "一般参考";
-  if (confidence === "low") return "辅助参考";
-  return "参考信息";
-}
-
 function formatMs(value?: number | null) {
   return typeof value === "number" ? `${value}ms` : "-";
 }
@@ -435,15 +422,15 @@ function SiteTestDetailModal({
           <h3>检测项</h3>
           {detail.checks?.length ? (
             <div className="probe-grid">
-              {detail.checks.map((check) => (
+              {detail.checks.map((check, index) => (
                 <article className="probe-card" data-status={check.status} key={`${check.code}-${check.name}`}>
                   <div>
-                    <strong>{check.code}</strong>
+                    <strong>{selfTestDisplayIndex(index)}</strong>
                     <span>{check.category}</span>
                   </div>
                   <h4>{check.name}</h4>
                   <p>{check.evidence}</p>
-                  <small>{probeStatusLabel(check.status)} · {confidenceLabel(check.confidence)}</small>
+                  <small>{selfTestStatusLabel(check.status)} · {selfTestConfidenceLabel(check.confidence)} · {selfTestDeductionLabel(check)}</small>
                 </article>
               ))}
             </div>

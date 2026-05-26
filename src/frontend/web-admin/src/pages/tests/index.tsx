@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { PageContainer, ProCard } from "@ant-design/pro-components";
 import { Alert, Button, Descriptions, Drawer, Input, Space, Table, Tag, message } from "antd";
 import AuthGuard from "@/components/AuthGuard";
@@ -6,26 +6,26 @@ import AdminHero, { AdminMetrics } from "@/components/AdminHero";
 import { fetchTestRecord, fetchTestRecords, runManualTest, type TestRecordDetail, type TestRecordListItem } from "@/services/operations";
 import { formatBeijingTime } from "@/utils/time";
 
+const DEFAULT_PAGE_SIZE = 20;
+
 export default function TestsPage() {
   const [items, setItems] = useState<TestRecordListItem[]>([]);
+  const [total, setTotal] = useState(0);
   const [detail, setDetail] = useState<TestRecordDetail | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [keyword, setKeyword] = useState("");
+  const [searchText, setSearchText] = useState("");
 
-  const filteredItems = useMemo(() => {
-    return items.filter((item) =>
-      [item.siteName, item.modelName, item.testType, item.status]
-        .some((value) => String(value).toLowerCase().includes(keyword.toLowerCase()))
-    );
-  }, [items, keyword]);
-
-  async function load() {
+  async function load(targetPage = page, targetPageSize = pageSize, targetKeyword = keyword) {
     setLoading(true);
     try {
-      const result = await fetchTestRecords(1, 100);
+      const result = await fetchTestRecords(targetPage, targetPageSize, targetKeyword);
       setItems(result.items);
+      setTotal(result.total);
       setError("");
     } catch (requestError) {
       setError((requestError as Error).message);
@@ -46,12 +46,13 @@ export default function TestsPage() {
   async function runTest() {
     const result = await runManualTest();
     message.success(`${result.message}，影响 ${result.affectedCount} 条`);
-    await load();
+    setPage(1);
+    await load(1, pageSize, keyword);
   }
 
   useEffect(() => {
-    void load();
-  }, []);
+    void load(page, pageSize, keyword);
+  }, [page, pageSize, keyword]);
 
   return (
     <AuthGuard>
@@ -63,17 +64,17 @@ export default function TestsPage() {
           actions={
             <>
               <Button type="primary" size="large" onClick={runTest}>手动测试</Button>
-              <Button size="large" onClick={load}>刷新</Button>
+              <Button size="large" onClick={() => load(page, pageSize, keyword)}>刷新</Button>
             </>
           }
         />
 
         <AdminMetrics
           items={[
-            { label: "测试记录", value: items.length, note: "当前样本数量" },
-            { label: "成功样本", value: items.filter((item) => item.status === "success").length, note: "参与稳定性聚合" },
-            { label: "失败样本", value: items.filter((item) => item.status !== "success").length, note: "触发风险规则" },
-            { label: "平均首 token", value: averageMs(items.map((item) => item.firstTokenMs)), note: "越低体验越好" }
+            { label: "测试记录", value: total, note: keyword ? "当前搜索结果" : "全部记录" },
+            { label: "当前页成功", value: items.filter((item) => item.status === "success").length, note: "参与稳定性聚合" },
+            { label: "当前页失败", value: items.filter((item) => item.status !== "success").length, note: "触发风险规则" },
+            { label: "当前页首 token", value: averageMs(items.map((item) => item.firstTokenMs)), note: "越低体验越好" }
           ]}
         />
 
@@ -81,17 +82,38 @@ export default function TestsPage() {
           <Input.Search
             allowClear
             placeholder="搜索站点、模型、状态"
+            value={searchText}
             style={{ width: 320, marginBottom: 16 }}
-            onSearch={setKeyword}
-            onChange={(event) => setKeyword(event.target.value)}
+            onSearch={(value) => {
+              setPage(1);
+              setKeyword(value.trim());
+            }}
+            onChange={(event) => {
+              const value = event.target.value;
+              setSearchText(value);
+              if (!value) {
+                setPage(1);
+                setKeyword("");
+              }
+            }}
           />
           {error ? <Alert type="warning" showIcon message={`测试接口暂不可用：${error}`} style={{ marginBottom: 16 }} /> : null}
           <Table
             className="cheapai-admin-table"
             loading={loading}
             rowKey="id"
-            dataSource={filteredItems}
-            pagination={{ pageSize: 10 }}
+            dataSource={items}
+            pagination={{
+              current: page,
+              pageSize,
+              total,
+              showSizeChanger: true,
+              showTotal: (count) => `共 ${count} 条`
+            }}
+            onChange={(pagination) => {
+              setPage(pagination.current ?? 1);
+              setPageSize(pagination.pageSize ?? DEFAULT_PAGE_SIZE);
+            }}
             columns={[
               { title: "站点", dataIndex: "siteName" },
               { title: "模型", dataIndex: "modelName" },
