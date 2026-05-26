@@ -10,6 +10,9 @@ namespace CheapAI.Infrastructure.Participation;
 public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
 {
     private const int EstimatedTokenLimit = 1000;
+    private const string ClaudeCodeBeta = "claude-code-20250219,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,effort-2025-11-24";
+    private const string ClaudeCodeCliVersion = "2.1.150";
+    private const string AnthropicSdkVersion = "0.94.0";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly HttpClient HttpClient = new()
     {
@@ -50,9 +53,11 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCts.CancelAfter(TimeSpan.FromSeconds(45));
 
+        var claudeSessionId = apiType == "anthropic" ? Guid.NewGuid().ToString() : null;
+        var effectiveStream = apiType == "anthropic" || request.IsStream;
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint);
-        ApplyAuthHeaders(httpRequest, apiType, request.ApiKey);
-        httpRequest.Content = new StringContent(JsonSerializer.Serialize(BuildProbePayload(request, apiType), JsonOptions), Encoding.UTF8, "application/json");
+        ApplyAuthHeaders(httpRequest, apiType, request.ApiKey, claudeSessionId);
+        httpRequest.Content = new StringContent(JsonSerializer.Serialize(BuildProbePayload(request, apiType, claudeSessionId), JsonOptions), Encoding.UTF8, "application/json");
 
         var stopwatch = Stopwatch.StartNew();
         try
@@ -66,7 +71,7 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
                 return FromHttpFailure(response.StatusCode, responseHeaderMs, (int)Math.Min(stopwatch.ElapsedMilliseconds, int.MaxValue), response);
             }
 
-            var probeResponse = await ReadResponseAsync(response, apiType, stopwatch, responseHeaderMs, request.IsStream, timeoutCts.Token);
+            var probeResponse = await ReadResponseAsync(response, apiType, stopwatch, responseHeaderMs, effectiveStream, timeoutCts.Token);
 
             return EvaluateProbeResponse(request, apiType, endpoint, response, probeResponse);
         }
@@ -96,24 +101,22 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         }
     }
 
-    private static Dictionary<string, object?> BuildProbePayload(CreateSelfTestRequest request, string apiType)
+    private static Dictionary<string, object?> BuildProbePayload(CreateSelfTestRequest request, string apiType, string? claudeSessionId = null)
     {
         var modelName = NormalizeModelNameForApi(request.ModelName, apiType);
-        var protocolAck = apiType == "anthropic" ? "anthropic-messages-compatible" : "openai-chat-completions-compatible";
-        var prompt = $$"""
-                    CheapAI relay verification probe. Return strict JSON only, without Markdown fences:
-                    {
-                      "model_claim": "the model identity you claim",
-                      "knowledge_answer": "answer only 9.11 or 9.8: which number is larger?",
-                      "protocol_ack": "{{protocolAck}}",
-                      "format_ack": "json-ok",
-                      "short_answer": "OK"
-                    }
-                    """;
 
         if (apiType == "anthropic")
         {
-            var systemPrompt = "You are Claude Code running a CheapAI compatibility probe. Behave like the Claude CLI assistant, but return only the requested JSON object.";
+            var prompt = "Reply with exactly OK.";
+            var sessionId = claudeSessionId ?? Guid.NewGuid().ToString();
+            var deviceId = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(sessionId))).ToLowerInvariant();
+            var userId = JsonSerializer.Serialize(new
+            {
+                device_id = deviceId,
+                account_uuid = string.Empty,
+                session_id = sessionId
+            }, JsonOptions);
+
             return new Dictionary<string, object?>
             {
                 ["model"] = modelName,
@@ -122,7 +125,11 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
                     new
                     {
                         type = "text",
-                        text = systemPrompt
+                        text = "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+                        cache_control = new
+                        {
+                            type = "ephemeral"
+                        }
                     }
                 },
                 ["messages"] = new object[]
@@ -135,20 +142,45 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
                             new
                             {
                                 type = "text",
-                                text = prompt
+                                text = prompt,
+                                cache_control = new
+                                {
+                                    type = "ephemeral"
+                                }
                             }
                         }
                     }
                 },
-                ["max_tokens"] = 260,
-                ["stream"] = request.IsStream,
+                ["tools"] = BuildClaudeCodeToolSchemas(),
                 ["metadata"] = new
                 {
-                    user_id = "cheapai-self-test"
-                }
+                    user_id = userId
+                },
+                ["max_tokens"] = 64000,
+                ["thinking"] = new
+                {
+                    type = "adaptive"
+                },
+                ["context_management"] = new
+                {
+                    edits = new object[]
+                    {
+                        new
+                        {
+                            type = "clear_thinking_20251015",
+                            keep = "all"
+                        }
+                    }
+                },
+                ["output_config"] = new
+                {
+                    effort = "xhigh"
+                },
+                ["stream"] = true
             };
         }
 
+        var openAiPrompt = "CheapAI relay compatibility probe. Reply with exactly OK.";
         var payload = new Dictionary<string, object?>
         {
             ["model"] = modelName,
@@ -157,10 +189,10 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
                 new
                 {
                     role = "user",
-                    content = prompt
+                    content = openAiPrompt
                 }
             },
-            ["max_tokens"] = 260,
+            ["max_tokens"] = 64,
             ["stream"] = request.IsStream
         };
 
@@ -169,12 +201,63 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             payload["temperature"] = 0;
         }
 
-        if (request.IsStream)
-        {
-            payload["stream_options"] = new { include_usage = true };
-        }
-
         return payload;
+    }
+
+    private static object[] BuildClaudeCodeToolSchemas()
+    {
+        return
+        [
+            ClaudeCodeToolSchema("Agent", "Launch a new agent to handle complex, multi-step tasks."),
+            ClaudeCodeToolSchema("AskUserQuestion", "Use this tool when you need to ask the user questions during execution."),
+            ClaudeCodeToolSchema("Bash", "Executes a given bash command and returns its output."),
+            ClaudeCodeToolSchema("CronCreate", "Schedule a prompt to be enqueued at a future time."),
+            ClaudeCodeToolSchema("CronDelete", "Cancel a cron job previously scheduled with CronCreate."),
+            ClaudeCodeToolSchema("CronList", "List all cron jobs scheduled via CronCreate."),
+            ClaudeCodeToolSchema("Edit", "Performs exact string replacements in files."),
+            ClaudeCodeToolSchema("EnterPlanMode", "Use this tool proactively when you're about to start a non-trivial implementation task."),
+            ClaudeCodeToolSchema("EnterWorktree", "Use this tool only when explicitly instructed to work in a worktree."),
+            ClaudeCodeToolSchema("ExitPlanMode", "Use this tool when you are in plan mode and ready for user approval."),
+            ClaudeCodeToolSchema("ExitWorktree", "Exit a worktree session created by EnterWorktree."),
+            ClaudeCodeToolSchema("Glob", "Fast file pattern matching tool that works with any codebase size."),
+            ClaudeCodeToolSchema("Grep", "A powerful search tool built on ripgrep."),
+            ClaudeCodeToolSchema("NotebookEdit", "Completely replaces the contents of a specific cell in a Jupyter notebook."),
+            ClaudeCodeToolSchema("Read", "Reads a file from the local filesystem."),
+            ClaudeCodeToolSchema("ScheduleWakeup", "Schedule when to resume work in dynamic mode."),
+            ClaudeCodeToolSchema("Skill", "Execute a skill within the main conversation."),
+            ClaudeCodeToolSchema("TaskCreate", "Create a structured task list for the current coding session."),
+            ClaudeCodeToolSchema("TaskGet", "Retrieve a task by its ID from the task list."),
+            ClaudeCodeToolSchema("TaskList", "List all tasks in the task list."),
+            ClaudeCodeToolSchema("TaskOutput", "Read output from a background task."),
+            ClaudeCodeToolSchema("TaskStop", "Stops a running background task by its ID."),
+            ClaudeCodeToolSchema("TaskUpdate", "Update a task in the task list."),
+            ClaudeCodeToolSchema("WebFetch", "Fetch content from a public URL."),
+            ClaudeCodeToolSchema("WebSearch", "Search the web and use the results to inform responses."),
+            ClaudeCodeToolSchema("Write", "Writes a file to the local filesystem.")
+        ];
+    }
+
+    private static object ClaudeCodeToolSchema(string name, string description)
+    {
+        return ToolSchema(
+            name,
+            description,
+            new
+            {
+                type = "object",
+                properties = new Dictionary<string, object?>(),
+                required = Array.Empty<string>()
+            });
+    }
+
+    private static object ToolSchema(string name, string description, object inputSchema)
+    {
+        return new
+        {
+            name,
+            description,
+            input_schema = inputSchema
+        };
     }
 
     private static async Task<ProbeResponse> ReadResponseAsync(
@@ -328,15 +411,16 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         };
 
         checks.Add(BuildContentIntegrityProbe(response.Content));
-        checks.Add(BuildStructuredOutputProbe(response.Content));
-        checks.Add(BuildKnowledgeProbe(response.Content));
+        checks.Add(BuildExactAckProbe(apiType, response.Content));
         checks.Add(BuildLatencyProbe(response.FirstTokenMs, response.FullResponseMs));
-        checks.Add(BuildTokenProbe(response.Usage));
-        checks.Add(BuildIdentityProbe(request.ModelName, response.Content));
-        checks.Add(BuildFullModelProbe(request.ModelName, response.ReturnedModel, response.Content));
+        checks.Add(BuildFullModelProbe(NormalizeModelNameForApi(request.ModelName, apiType), response.ReturnedModel, response.Content));
+        if (apiType == "anthropic" && response.Usage is not null)
+        {
+            checks.Add(BuildTokenProbe(response.Usage));
+        }
         checks.Add(BuildUpstreamFingerprintProbe(httpResponse));
 
-        if (request.IsStream)
+        if (response.StreamIntegrityValid.HasValue)
         {
             checks.Add(Probe(
                 "S5",
@@ -384,6 +468,11 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             return Probe("D5", "内容完整性", "完整性", "warn", "high", 0, 25, "模型返回内容为空，无法继续判断回答质量。");
         }
 
+        if (IsExpectedAck(content))
+        {
+            return Probe("D5", "内容完整性", "完整性", "pass", "high", 10, 0, "模型返回了自测所需的简短确认内容。");
+        }
+
         if (content.Length < 8)
         {
             return Probe("D5", "内容完整性", "完整性", "warn", "medium", 5, 8, "模型返回内容过短，可能是中转截断、降级响应或模型没有按要求输出。");
@@ -392,32 +481,26 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         return Probe("D5", "内容完整性", "完整性", "pass", "high", 10, 0, "模型返回了非空正文，可以继续检查内容和结构。");
     }
 
-    private static SelfTestProbeResult BuildStructuredOutputProbe(string content)
+    private static SelfTestProbeResult BuildExactAckProbe(string apiType, string content)
     {
-        return TryParseProbeJson(content, out _)
-            ? Probe("D7", "结构化输出", "能力", "pass", "high", 15, 0, "模型按要求返回了可解析的严格 JSON。")
-            : Probe("D7", "结构化输出", "能力", "warn", "high", 0, 22, "模型没有按要求返回严格 JSON，可能影响自动化解析，但不代表接口请求失败。");
-    }
-
-    private static SelfTestProbeResult BuildKnowledgeProbe(string content)
-    {
-        if (!TryParseProbeJson(content, out var root))
+        var isAnthropic = apiType == "anthropic";
+        if (IsExpectedAck(content))
         {
-            return Probe("D4", "知识能力", "能力", "unknown", "medium", 0, 0, "由于结构化 JSON 解析失败，无法可靠读取知识题答案。");
+            return isAnthropic
+                ? Probe("CC3", "Claude Code 指令响应", "协议", "pass", "high", 10, 0, "Claude Code 探针按要求返回 OK，说明 Messages 请求和内容增量可正常闭环。")
+                : Probe("CO3", "Codex 指令响应", "协议", "pass", "high", 10, 0, "OpenAI/Codex 探针按要求返回 OK，说明兼容接口可正常完成一次最小对话。");
         }
 
-        var answer = TryGetString(root, "knowledge_answer").ToLowerInvariant();
-        if (answer.Contains("9.8") || answer.Contains("9.80"))
+        if (string.IsNullOrWhiteSpace(content))
         {
-            return Probe("D4", "知识能力", "能力", "pass", "high", 20, 0, "确定性数字比较题回答正确。");
+            return isAnthropic
+                ? Probe("CC3", "Claude Code 指令响应", "协议", "warn", "high", 0, 18, "Claude Code 探针没有返回可读正文，可能是流被截断或中转返回了空增量。")
+                : Probe("CO3", "Codex 指令响应", "协议", "warn", "high", 0, 18, "OpenAI/Codex 探针没有返回可读正文，可能是流被截断或中转返回了空增量。");
         }
 
-        if (answer.Contains("9.11"))
-        {
-            return Probe("D4", "知识能力", "能力", "warn", "high", 0, 30, "确定性数字比较题回答错误，说明模型能力或响应内容存在异常。");
-        }
-
-        return Probe("D4", "知识能力", "能力", "warn", "medium", 8, 8, "知识题答案不够明确，无法给出满分判断。");
+        return isAnthropic
+            ? Probe("CC3", "Claude Code 指令响应", "协议", "warn", "medium", 4, 6, "Claude Code 探针已返回正文，但没有严格按最小确认口令输出，仅作为轻微兼容性风险。")
+            : Probe("CO3", "Codex 指令响应", "协议", "warn", "medium", 4, 6, "OpenAI/Codex 探针已返回正文，但没有严格按最小确认口令输出，仅作为轻微兼容性风险。");
     }
 
     private static SelfTestProbeResult BuildLatencyProbe(int? firstTokenMs, int fullResponseMs)
@@ -454,36 +537,6 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         }
 
         return Probe("S1", "Token 用量", "安全", "pass", "medium", 0, 0, $"本次返回 total_tokens={totalTokens}，处于预估范围内。");
-    }
-
-    private static SelfTestProbeResult BuildIdentityProbe(string modelName, string content)
-    {
-        if (!TryParseProbeJson(content, out var root))
-        {
-            return Probe("D3", "身份一致性", "身份", "unknown", "low", 0, 6, "没有读取到模型自述身份，不能据此判断是否冒充。");
-        }
-
-        var claim = TryGetString(root, "model_claim").ToLowerInvariant();
-        var expectedFamily = GetExpectedModelFamily(modelName);
-        if (string.IsNullOrWhiteSpace(claim) || expectedFamily == "unknown")
-        {
-            return Probe("D3", "身份一致性", "身份", "unknown", "low", 0, 6, "模型自述身份信息不足，或目标模型族无法识别，只作为低权重参考。");
-        }
-
-        var matched = claim.Contains(expectedFamily, StringComparison.OrdinalIgnoreCase) ||
-            expectedFamily == "gpt" && (claim.Contains("openai", StringComparison.OrdinalIgnoreCase) || claim.Contains("gpt", StringComparison.OrdinalIgnoreCase)) ||
-            expectedFamily == "claude" && (claim.Contains("anthropic", StringComparison.OrdinalIgnoreCase) || claim.Contains("claude", StringComparison.OrdinalIgnoreCase)) ||
-            expectedFamily == "gemini" && (claim.Contains("google", StringComparison.OrdinalIgnoreCase) || claim.Contains("gemini", StringComparison.OrdinalIgnoreCase));
-
-        return Probe(
-            "D3",
-            "身份一致性",
-            "身份",
-            matched ? "pass" : "warn",
-            "low",
-            0,
-            matched ? 0 : 8,
-            matched ? $"模型自述身份与 {expectedFamily} 模型族基本一致。" : $"模型自述身份没有明确匹配请求的 {expectedFamily} 模型族。");
     }
 
     private static SelfTestProbeResult BuildFullModelProbe(string requestedModel, string? returnedModel, string content)
@@ -736,7 +789,7 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         var targetPath = apiType == "anthropic" ? "/messages" : "/chat/completions";
         if (uri.AbsolutePath.EndsWith(targetPath, StringComparison.OrdinalIgnoreCase))
         {
-            endpoint = uri;
+            endpoint = apiType == "anthropic" ? EnsureAnthropicBetaEndpoint(uri) : uri;
             return true;
         }
 
@@ -745,7 +798,30 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
             ? targetPath
             : $"/v1{targetPath}";
         endpoint = new Uri(baseUrl + suffix);
+        if (apiType == "anthropic")
+        {
+            endpoint = EnsureAnthropicBetaEndpoint(endpoint);
+        }
+
         return true;
+    }
+
+    private static Uri EnsureAnthropicBetaEndpoint(Uri endpoint)
+    {
+        var builder = new UriBuilder(endpoint);
+        var query = builder.Query.TrimStart('?');
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            builder.Query = "beta=true";
+            return builder.Uri;
+        }
+
+        if (!query.Split('&', StringSplitOptions.RemoveEmptyEntries).Any(part => part.StartsWith("beta=", StringComparison.OrdinalIgnoreCase)))
+        {
+            builder.Query = $"{query}&beta=true";
+        }
+
+        return builder.Uri;
     }
 
     private static string NormalizeApiType(string? apiType, string modelName)
@@ -770,20 +846,33 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
     {
         return string.Equals(apiType, "anthropic", StringComparison.OrdinalIgnoreCase) ||
             modelName.Contains("claude", StringComparison.OrdinalIgnoreCase) ||
-            modelName.Contains("anthropic", StringComparison.OrdinalIgnoreCase);
+            modelName.Contains("anthropic", StringComparison.OrdinalIgnoreCase) ||
+            modelName.Contains("codex", StringComparison.OrdinalIgnoreCase) ||
+            modelName.Contains("gpt-5", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static void ApplyAuthHeaders(HttpRequestMessage request, string apiType, string apiKey)
+    private static void ApplyAuthHeaders(HttpRequestMessage request, string apiType, string apiKey, string? claudeSessionId = null)
     {
         if (apiType == "anthropic")
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-            request.Headers.TryAddWithoutValidation("x-api-key", apiKey);
             request.Headers.TryAddWithoutValidation("anthropic-version", "2023-06-01");
-            request.Headers.TryAddWithoutValidation("anthropic-beta", "claude-code-20250219");
-            request.Headers.TryAddWithoutValidation("x-claude-code-session-id", "cheapai-self-test");
-            request.Headers.TryAddWithoutValidation("x-claude-code-client", "cheapai");
-            request.Headers.UserAgent.ParseAdd("claude-code/1.0");
+            request.Headers.TryAddWithoutValidation("anthropic-beta", ClaudeCodeBeta);
+            request.Headers.TryAddWithoutValidation("x-app", "cli");
+            if (!string.IsNullOrWhiteSpace(claudeSessionId))
+            {
+                request.Headers.TryAddWithoutValidation("x-claude-code-session-id", claudeSessionId);
+            }
+            request.Headers.TryAddWithoutValidation("X-Stainless-Lang", "js");
+            request.Headers.TryAddWithoutValidation("X-Stainless-Package-Version", AnthropicSdkVersion);
+            request.Headers.TryAddWithoutValidation("X-Stainless-OS", "Windows");
+            request.Headers.TryAddWithoutValidation("X-Stainless-Arch", "x64");
+            request.Headers.TryAddWithoutValidation("X-Stainless-Runtime", "node");
+            request.Headers.TryAddWithoutValidation("X-Stainless-Runtime-Version", "v24.3.0");
+            request.Headers.TryAddWithoutValidation("X-Stainless-Retry-Count", "0");
+            request.Headers.TryAddWithoutValidation("X-Stainless-Timeout", "600");
+            request.Headers.TryAddWithoutValidation("anthropic-dangerous-direct-browser-access", "true");
+            request.Headers.TryAddWithoutValidation("User-Agent", $"claude-cli/{ClaudeCodeCliVersion} (external, sdk-cli)");
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             return;
         }
@@ -794,7 +883,18 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
     private static string NormalizeModelNameForApi(string modelName, string apiType)
     {
         var normalized = modelName.Trim();
-        return apiType == "anthropic" ? normalized.Replace('.', '-') : normalized;
+        if (apiType != "anthropic")
+        {
+            return normalized;
+        }
+
+        normalized = normalized.Replace('.', '-');
+        return normalized.ToLowerInvariant() switch
+        {
+            "claude-code-4-7" => "claude-opus-4-7",
+            "claude-code-4-6" => "claude-sonnet-4-6",
+            _ => normalized
+        };
     }
 
     private static bool IsReservedHost(string host)
@@ -1151,6 +1251,12 @@ public sealed class OpenAiCompatibleSelfTestRunner : ISelfTestRunner
         var output = next.OutputTokens ?? current.OutputTokens;
         var total = next.TotalTokens ?? current.TotalTokens ?? (input.HasValue || output.HasValue ? (input ?? 0) + (output ?? 0) : null);
         return new TokenUsage(input, output, total);
+    }
+
+    private static bool IsExpectedAck(string content)
+    {
+        var normalized = content.Trim().Trim('.', '!', '！', '。');
+        return normalized.Equals("OK", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool TryParseProbeJson(string content, out JsonElement root)
