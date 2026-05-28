@@ -12,12 +12,16 @@ import AuthGuard from "@/components/AuthGuard";
 import AdminPage from "@/components/AdminPage";
 import { fetchModels, previewModelImport, type ModelImportPreviewItem, type ModelListItem } from "@/services/models";
 import {
+  createSiteOffer,
   createSite,
   deleteSite,
+  deleteSiteOffer,
   fetchSite,
+  fetchSiteOffers,
   fetchSites,
   previewSitePricing,
   updateSite,
+  updateSiteOffer,
   updateSiteStatus,
   type RelaySiteDetail,
   type RelaySiteListItem,
@@ -205,6 +209,11 @@ export default function SitesPage() {
   const [offerModalOpen, setOfferModalOpen] = useState(false);
   const [editingOfferIndex, setEditingOfferIndex] = useState<number | null>(null);
   const [offerStatusFilter, setOfferStatusFilter] = useState("active");
+  const [offerKeyword, setOfferKeyword] = useState("");
+  const [offerLoading, setOfferLoading] = useState(false);
+  const [offerPage, setOfferPage] = useState(1);
+  const [offerPageSize, setOfferPageSize] = useState(20);
+  const [offerTotal, setOfferTotal] = useState(0);
   const [selectedSiteIds, setSelectedSiteIds] = useState<Key[]>([]);
   const [selectedOfferRows, setSelectedOfferRows] = useState<Key[]>([]);
   const [siteOffers, setSiteOffers] = useState<RelaySiteOffer[]>([]);
@@ -252,6 +261,37 @@ export default function SitesPage() {
     }
   }
 
+  async function loadSiteOffers(
+    siteId: number,
+    options: { page?: number; pageSize?: number; keyword?: string; status?: string } = {}
+  ) {
+    const nextPage = options.page ?? offerPage;
+    const nextPageSize = options.pageSize ?? offerPageSize;
+    const nextKeyword = options.keyword ?? offerKeyword;
+    const nextStatus = options.status ?? offerStatusFilter;
+    setOfferLoading(true);
+
+    try {
+      const result = await fetchSiteOffers(siteId, {
+        page: nextPage,
+        pageSize: nextPageSize,
+        keyword: nextKeyword,
+        status: nextStatus
+      });
+      setSiteOffers(result.items);
+      setOfferPage(result.page);
+      setOfferPageSize(result.pageSize);
+      setOfferTotal(result.total);
+      setSelectedOfferRows([]);
+      return result;
+    } catch (requestError) {
+      message.error((requestError as Error).message);
+      return null;
+    } finally {
+      setOfferLoading(false);
+    }
+  }
+
   function openCreateModal() {
     setEditing(null);
     setImportApiKey("");
@@ -262,6 +302,11 @@ export default function SitesPage() {
     setPricingGroupId("");
     setSiteOffers([]);
     setSelectedOfferRows([]);
+    setOfferKeyword("");
+    setOfferStatusFilter("active");
+    setOfferPage(1);
+    setOfferPageSize(20);
+    setOfferTotal(0);
     setSiteFormValues({ ...defaultSiteValues, rechargeRatio: 1, bonusRatio: 0 });
     setFormOpen(true);
   }
@@ -278,10 +323,15 @@ export default function SitesPage() {
       setPricingBonusRatio(0);
       setPricingRateBaseline(0.002);
       setPricingGroupId("");
-      const offers = detail.offers?.map((offer) => ({ ...offer, displayName: offer.displayName })) ?? [];
-      const firstOffer = detail.offers?.[0];
-      setSiteOffers(offers);
+      setOfferKeyword("");
+      setOfferStatusFilter("active");
+      setOfferPage(1);
+      setOfferPageSize(20);
+      setOfferTotal(0);
+      setSiteOffers([]);
       setSelectedOfferRows([]);
+      const offerResult = await loadSiteOffers(detail.id, { page: 1, pageSize: 20, keyword: "", status: "active" });
+      const firstOffer = offerResult?.items?.[0];
       setSiteFormValues({
         ...defaultSiteValues,
         ...detail,
@@ -330,6 +380,10 @@ export default function SitesPage() {
     setSelectedImportOfferKeys([]);
     setSelectedOfferRows([]);
     setSiteOffers([]);
+    setOfferKeyword("");
+    setOfferStatusFilter("active");
+    setOfferPage(1);
+    setOfferTotal(0);
   }
 
   useEffect(() => {
@@ -358,8 +412,7 @@ export default function SitesPage() {
         testIntervalMinutes: toNumber(values.testIntervalMinutes) ?? 60,
         supportsRefund: Boolean(values.supportsRefund),
         supportsInvoice: Boolean(values.supportsInvoice),
-        hasDocs: Boolean(values.hasDocs),
-        offers: normalizeOffers(siteOffers, models, toNumber(values.rechargeRatio) ?? 1, toNumber(values.bonusRatio) ?? 0)
+        hasDocs: Boolean(values.hasDocs)
       };
 
       if (editing) {
@@ -541,12 +594,43 @@ export default function SitesPage() {
     setOfferImportOpen(true);
   }
 
-  function saveSelectedImportedOffers() {
+  function buildOfferPayload(offer: RelaySiteOffer) {
+    return normalizeOffers(
+      [offer],
+      models,
+      toNumber(form.getFieldValue("rechargeRatio")) ?? pricingRechargeRatio,
+      toNumber(form.getFieldValue("bonusRatio")) ?? pricingBonusRatio
+    )[0];
+  }
+
+  async function saveSelectedImportedOffers() {
     const selectedKeys = new Set(selectedImportOfferKeys);
     const selectedRows = offerImportRows.filter((row) => selectedKeys.has(row.previewKey));
 
     if (!selectedRows.length) {
       message.warning("请选择要保存的模型");
+      return;
+    }
+
+    if (editing) {
+      try {
+        await Promise.all(selectedRows.map((row) => {
+          const payload = buildOfferPayload(stripPreviewFields(row));
+          if (!payload) {
+            throw new Error("璇峰畬鍠勬ā鍨嬪悕绉版垨璇锋眰鍚嶇О");
+          }
+
+          return createSiteOffer(editing.id, payload);
+        }));
+        setSelectedOfferRows([]);
+        setOfferImportOpen(false);
+        setOfferImportRows([]);
+        setSelectedImportOfferKeys([]);
+        await loadSiteOffers(editing.id, { page: 1 });
+        message.success(`已保存 ${selectedRows.length} 个模型`);
+      } catch (requestError) {
+        message.error((requestError as Error).message);
+      }
       return;
     }
 
@@ -604,6 +688,11 @@ export default function SitesPage() {
   }
 
   function openCreateOfferModal() {
+    if (!editing) {
+      message.warning("请先保存基本信息后再添加模型");
+      return;
+    }
+
     setEditingOfferIndex(null);
     offerForm.resetFields();
     offerForm.setFieldsValue({
@@ -622,19 +711,54 @@ export default function SitesPage() {
     setOfferModalOpen(true);
   }
 
-  function removeOffer(index: number) {
+  async function removeOffer(index: number) {
+    const offer = siteOffers[index];
+    if (editing && offer?.id) {
+      await deleteSiteOffer(editing.id, offer.id);
+      message.success("模型报价已删除");
+      await loadSiteOffers(editing.id, { page: offerPage });
+      return;
+    }
+
     setSiteOffers((current) => current.filter((_, offerIndex) => offerIndex !== index));
     setSelectedOfferRows((current) => current.filter((rowIndex) => rowIndex !== index));
   }
 
-  function batchUpdateOffers(status: string) {
+  async function batchUpdateOffers(status: string) {
     const selectedIndexes = new Set(selectedOfferRows.map(Number));
+    if (editing) {
+      const selectedOffers = siteOffers.filter((_, index) => selectedIndexes.has(index));
+      await Promise.all(selectedOffers.map((offer) => {
+        if (!offer.id) {
+          return Promise.resolve();
+        }
+
+        const payload = buildOfferPayload({ ...offer, status });
+        if (!payload) {
+          throw new Error("模型报价数据不完整");
+        }
+
+        return updateSiteOffer(editing.id, offer.id, payload);
+      }));
+      message.success(`已更新 ${selectedOffers.length} 个模型`);
+      await loadSiteOffers(editing.id, { page: offerPage });
+      return;
+    }
+
     setSiteOffers((current) => current.map((offer, index) => selectedIndexes.has(index) ? { ...offer, status } : offer));
     setSelectedOfferRows([]);
   }
 
-  function batchRemoveOffers() {
+  async function batchRemoveOffers() {
     const selectedIndexes = new Set(selectedOfferRows.map(Number));
+    if (editing) {
+      const selectedOffers = siteOffers.filter((offer, index) => selectedIndexes.has(index) && offer.id);
+      await Promise.all(selectedOffers.map((offer) => deleteSiteOffer(editing.id, offer.id!)));
+      message.success(`已删除 ${selectedOffers.length} 个模型`);
+      await loadSiteOffers(editing.id, { page: offerPage });
+      return;
+    }
+
     setSiteOffers((current) => current.filter((_, index) => !selectedIndexes.has(index)));
     setSelectedOfferRows([]);
   }
@@ -654,7 +778,29 @@ export default function SitesPage() {
       hasTestApiKey: Boolean(values.testApiKey?.trim() || values.hasTestApiKey)
     };
 
-    if (editingOfferIndex === null) {
+    if (editing) {
+      try {
+        const payload = buildOfferPayload(nextOffer);
+        if (!payload) {
+          message.warning("请完善模型名称或请求名称");
+          return;
+        }
+
+        const currentOffer = editingOfferIndex === null ? undefined : siteOffers[editingOfferIndex];
+        if (currentOffer?.id) {
+          await updateSiteOffer(editing.id, currentOffer.id, payload);
+          message.success("模型报价已更新");
+          await loadSiteOffers(editing.id, { page: offerPage });
+        } else {
+          await createSiteOffer(editing.id, payload);
+          message.success("模型报价已新增");
+          await loadSiteOffers(editing.id, { page: 1 });
+        }
+      } catch (requestError) {
+        message.error((requestError as Error).message);
+        return;
+      }
+    } else if (editingOfferIndex === null) {
       setSiteOffers((current) => [...current, nextOffer]);
     } else {
       setSiteOffers((current) => current.map((offer, index) => index === editingOfferIndex ? nextOffer : offer));
@@ -662,6 +808,30 @@ export default function SitesPage() {
 
     setOfferModalOpen(false);
     setEditingOfferIndex(null);
+  }
+
+  function handleOfferSearch(value: string) {
+    setOfferKeyword(value);
+    if (editing) {
+      void loadSiteOffers(editing.id, { page: 1, keyword: value });
+    }
+  }
+
+  function handleOfferStatusFilter(value: string) {
+    setOfferStatusFilter(value);
+    if (editing) {
+      void loadSiteOffers(editing.id, { page: 1, status: value });
+    }
+  }
+
+  function handleOfferPageChange(page: number, pageSize: number) {
+    if (editing) {
+      void loadSiteOffers(editing.id, { page, pageSize });
+      return;
+    }
+
+    setOfferPage(page);
+    setOfferPageSize(pageSize);
   }
 
   useEffect(() => {
@@ -869,10 +1039,18 @@ export default function SitesPage() {
                       label: "编辑模型",
                       children: (
                         <>
+              {!editing ? (
+                <Alert
+                  type="info"
+                  showIcon
+                  style={{ marginBottom: 16 }}
+                  message="请先保存站点基本信息，再进入编辑页新增和维护模型报价。"
+                />
+              ) : null}
               <Space wrap style={{ marginBottom: 16 }}>
                 <Input value={importVendor} onChange={(event) => setImportVendor(event.target.value)} placeholder="抓取厂商名" style={{ width: 160 }} />
                 <Input.Password value={importApiKey} onChange={(event) => setImportApiKey(event.target.value)} placeholder="API Key，不保存" style={{ width: 260 }} />
-                <Button icon={<SearchOutlined />} loading={modelImporting} onClick={importModelsFromEndpoint}>
+                <Button icon={<SearchOutlined />} disabled={!editing} loading={modelImporting} onClick={importModelsFromEndpoint}>
                   从 Base URL 抓取模型
                 </Button>
               </Space>
@@ -903,7 +1081,7 @@ export default function SitesPage() {
                   placeholder="用户组，可留空取最低价"
                   style={{ width: 190 }}
                 />
-                <Button icon={<SearchOutlined />} loading={pricingImporting} onClick={importPricingFromEndpoint}>
+                <Button icon={<SearchOutlined />} disabled={!editing} loading={pricingImporting} onClick={importPricingFromEndpoint}>
                   按 one-tracker 抓取价格
                 </Button>
               </Space>
@@ -915,6 +1093,10 @@ export default function SitesPage() {
                     .map((offer, rowIndex) => ({ ...offer, rowIndex }))
                     .filter((offer) => {
                       const status = offer.status || "active";
+                      if (editing) {
+                        return status !== "archived";
+                      }
+
                       return status !== "archived" && (offerStatusFilter === "all" || status === offerStatusFilter);
                     });
 
@@ -922,33 +1104,53 @@ export default function SitesPage() {
                     <Space direction="vertical" size={12} style={{ width: "100%" }}>
                       <Space style={{ width: "100%", justifyContent: "space-between" }}>
                         <Space wrap>
-                          <Tag color="blue">当前显示 {rows.length} 个模型</Tag>
+                          <Tag color="blue">当前显示 {editing ? offerTotal : rows.length} 个模型</Tag>
+                          <Input.Search
+                            allowClear
+                            value={offerKeyword}
+                            placeholder="搜索模型、请求名、厂商"
+                            style={{ width: 260 }}
+                            onSearch={handleOfferSearch}
+                            onChange={(event) => {
+                              setOfferKeyword(event.target.value);
+                              if (!event.target.value) {
+                                handleOfferSearch("");
+                              }
+                            }}
+                          />
                           <Select
                             value={offerStatusFilter}
                             options={offerStatusFilterOptions}
                             style={{ width: 130 }}
-                            onChange={setOfferStatusFilter}
+                            onChange={handleOfferStatusFilter}
                           />
-                          <Button disabled={!selectedOfferRows.length} onClick={() => batchUpdateOffers("active")}>
+                          <Button disabled={!editing || !selectedOfferRows.length} onClick={() => batchUpdateOffers("active")}>
                             批量启用
                           </Button>
-                          <Button disabled={!selectedOfferRows.length} onClick={() => batchUpdateOffers("hidden")}>
+                          <Button disabled={!editing || !selectedOfferRows.length} onClick={() => batchUpdateOffers("hidden")}>
                             批量隐藏
                           </Button>
                           <Popconfirm title={`确认删除选中的 ${selectedOfferRows.length} 个模型？`} onConfirm={batchRemoveOffers}>
-                            <Button danger disabled={!selectedOfferRows.length}>
+                            <Button danger disabled={!editing || !selectedOfferRows.length}>
                               批量删除
                             </Button>
                           </Popconfirm>
                         </Space>
-                        <Button icon={<PlusOutlined />} type="primary" onClick={openCreateOfferModal}>
+                        <Button icon={<PlusOutlined />} type="primary" disabled={!editing} onClick={openCreateOfferModal}>
                           新增模型价格
                         </Button>
                       </Space>
                       <Table<OfferTableRow>
                         rowKey="rowIndex"
+                        loading={offerLoading}
                         dataSource={rows}
-                        pagination={{ pageSize: 12, showSizeChanger: false }}
+                        pagination={editing ? {
+                          current: offerPage,
+                          pageSize: offerPageSize,
+                          total: offerTotal,
+                          showSizeChanger: true,
+                          onChange: handleOfferPageChange
+                        } : { pageSize: 12, showSizeChanger: false }}
                         scroll={{ x: 980, y: 460 }}
                         rowSelection={{
                           selectedRowKeys: selectedOfferRows,

@@ -90,6 +90,8 @@ public sealed class DatabaseInitializationHostedService(
         await EnsureModelDisplayColumnsAsync(cancellationToken);
         await EnsureRelaySiteAutoTestColumnsAsync(cancellationToken);
         await EnsureRelayOfferAutoTestColumnsAsync(cancellationToken);
+        await EnsureOutboundClickSchemaAsync(cancellationToken);
+        await EnsureQueryIndexesAsync(cancellationToken);
         await EnsureArticleTagSchemaAsync(cancellationToken);
         await EnsureSiteSettingsBrandColumnsAsync(cancellationToken);
     }
@@ -388,6 +390,49 @@ public sealed class DatabaseInitializationHostedService(
         }
     }
 
+    private async Task EnsureOutboundClickSchemaAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(mySqlOptions.Value.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        if (!await TableExistsAsync(connection, "site_outbound_clicks", cancellationToken))
+        {
+            await using var createCommand = connection.CreateCommand();
+            createCommand.CommandText = """
+                CREATE TABLE IF NOT EXISTS site_outbound_clicks (
+                  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                  site_id BIGINT UNSIGNED NOT NULL,
+                  site_slug VARCHAR(128) NOT NULL,
+                  target_type VARCHAR(24) NOT NULL,
+                  target_url VARCHAR(512) NOT NULL,
+                  source_path VARCHAR(255) NULL,
+                  referrer_host VARCHAR(128) NULL,
+                  ip_hash CHAR(64) NULL,
+                  user_agent_hash CHAR(64) NULL,
+                  clicked_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+                  PRIMARY KEY (id),
+                  KEY idx_site_outbound_clicks_site_time (site_id, clicked_at),
+                  KEY idx_site_outbound_clicks_target_time (target_type, clicked_at)
+                );
+                """;
+            await createCommand.ExecuteNonQueryAsync(cancellationToken);
+            return;
+        }
+
+        await EnsureIndexAsync(
+            connection,
+            "site_outbound_clicks",
+            "idx_site_outbound_clicks_site_time",
+            "ALTER TABLE site_outbound_clicks ADD INDEX idx_site_outbound_clicks_site_time (site_id, clicked_at);",
+            cancellationToken);
+        await EnsureIndexAsync(
+            connection,
+            "site_outbound_clicks",
+            "idx_site_outbound_clicks_target_time",
+            "ALTER TABLE site_outbound_clicks ADD INDEX idx_site_outbound_clicks_target_time (target_type, clicked_at);",
+            cancellationToken);
+    }
+
     private async Task EnsureArticleTagSchemaAsync(CancellationToken cancellationToken)
     {
         await using var connection = new MySqlConnection(mySqlOptions.Value.ConnectionString);
@@ -425,6 +470,48 @@ public sealed class DatabaseInitializationHostedService(
                 );
                 """;
             await createMapsCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
+    private async Task EnsureQueryIndexesAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(mySqlOptions.Value.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        if (await TableExistsAsync(connection, "test_records", cancellationToken))
+        {
+            await EnsureIndexAsync(
+                connection,
+                "test_records",
+                "idx_test_records_site_time",
+                "ALTER TABLE test_records ADD INDEX idx_test_records_site_time (site_id, tested_at);",
+                cancellationToken);
+            await EnsureIndexAsync(
+                connection,
+                "test_records",
+                "idx_test_records_time_site_type",
+                "ALTER TABLE test_records ADD INDEX idx_test_records_time_site_type (tested_at, site_id, test_type);",
+                cancellationToken);
+        }
+
+        if (await TableExistsAsync(connection, "model_ranking_snapshots", cancellationToken))
+        {
+            await EnsureIndexAsync(
+                connection,
+                "model_ranking_snapshots",
+                "idx_model_rankings_site_type_window",
+                "ALTER TABLE model_ranking_snapshots ADD INDEX idx_model_rankings_site_type_window (site_id, ranking_type, window_type);",
+                cancellationToken);
+        }
+
+        if (await TableExistsAsync(connection, "relay_sites", cancellationToken))
+        {
+            await EnsureIndexAsync(
+                connection,
+                "relay_sites",
+                "idx_relay_sites_deleted_status",
+                "ALTER TABLE relay_sites ADD INDEX idx_relay_sites_deleted_status (deleted_at, status);",
+                cancellationToken);
         }
     }
 

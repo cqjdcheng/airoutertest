@@ -93,6 +93,7 @@ public static class DependencyInjection
         services.AddScoped<IModelRankingSnapshotRepository, ModelRankingSnapshotRepository>();
         services.AddScoped<IPublicSiteQueryRepository, PublicSiteQueryRepository>();
         services.AddScoped<IPublicCatalogRepository, PublicCatalogRepository>();
+        services.AddScoped<IPublicOutboundClickRepository, PublicOutboundClickRepository>();
         services.AddScoped<IOperationsRepository, OperationsRepository>();
         services.AddScoped<IParticipationRepository, ParticipationRepository>();
         services.AddScoped<ISiteSettingsRepository, SiteSettingsRepository>();

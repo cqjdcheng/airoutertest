@@ -729,12 +729,11 @@
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/v1/public/site-settings` | 公开站点名称和图标 |
-| GET | `/api/v1/public/home/overview` | 首页统计、热门模型、排行卡片、风险提示 |
+| GET | `/api/v1/public/home/overview` | 首页统计和热门模型 |
 | GET | `/api/v1/public/models` | 公开模型目录 |
 | GET | `/api/v1/public/sites` | 公开站点目录 |
 | GET | `/api/v1/public/sites/{siteSlug}` | 公开站点详情 |
 | GET | `/api/v1/public/rankings/models/{modelSlug}` | 单模型排行 |
-| GET | `/api/v1/public/rankings/cheapest` | 多个模型的低价排行汇总 |
 | GET | `/api/v1/public/tests/latest` | 最新测试记录 |
 | GET | `/api/v1/public/tests/{id}` | 测试记录详情 |
 | GET | `/api/v1/public/self-tests/challenge` | 自助测试挑战题 |

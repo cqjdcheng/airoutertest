@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { RelayTestPanel, type ModelOption } from "@/app/components/RelayTestPanel";
 import { formatDateTime, score, trustScore } from "@/lib/format";
 import { getJson, type PublicEnvelope } from "@/lib/api";
@@ -367,6 +367,9 @@ function TestDetailModal({
   error: string;
   onClose: () => void;
 }) {
+  const resolvedScore = trustScore(detail.matchScore, detail.riskScore) ?? 0;
+  const scoreRingStyle = { "--score": `${resolvedScore}%` } as CSSProperties;
+
   return (
     <div className="challenge-modal" role="dialog" aria-modal="true" aria-labelledby="test-detail-title">
       <div className="challenge-modal__backdrop" onClick={onClose} />
@@ -383,16 +386,19 @@ function TestDetailModal({
 
         {error ? <div className="relay-error mt-4">{error}</div> : null}
 
-        <div className="test-detail-summary mt-5">
-          <span className="status-pill" data-tone={statusTone(detail.status)}>
-            {loading ? "加载详情中" : statusLabel(detail.status)}
-          </span>
-          <span className="status-pill" data-tone="neutral">
-            分数 {score(trustScore(detail.matchScore, detail.riskScore))}
-          </span>
-          <span className="status-pill" data-tone="neutral">
-            {formatDateTime(detail.testedAt)}
-          </span>
+        <div className="test-detail-hero mt-5">
+          <div className="score-ring score-ring--large" style={scoreRingStyle}>
+            <strong>{score(resolvedScore, 0)}</strong>
+            <span>分</span>
+          </div>
+          <div className="test-detail-summary">
+            <span className="status-pill" data-tone={statusTone(detail.status)}>
+              {loading ? "加载详情中" : statusLabel(detail.status)}
+            </span>
+            <span className="status-pill" data-tone="neutral">
+              {formatDateTime(detail.testedAt)}
+            </span>
+          </div>
         </div>
 
         <p className="test-detail-copy">{detail.resultSummary || detail.errorMessage || "暂无摘要。"}</p>

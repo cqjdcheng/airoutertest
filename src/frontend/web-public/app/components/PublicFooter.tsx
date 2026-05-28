@@ -8,7 +8,6 @@ const footerGroups = [
     title: "平台维度",
     links: [
       { href: "/sites", label: "中转站大全" },
-      { href: "/models", label: "模型大全" },
       { href: "/tests", label: "测试口径" }
     ]
   },
@@ -23,9 +22,9 @@ const footerGroups = [
   {
     title: "使用原则",
     links: [
-      { href: "/rankings", label: "先看价格排行" },
-      { href: "/tests", label: "再看稳定与风险" },
-      { href: "/sites", label: "最后核对企业属性" }
+      { href: "/sites", label: "先看稳定性" },
+      { href: "/tests", label: "再看测试记录" },
+      { href: "/contact", label: "最后人工确认" }
     ]
   },
   {
@@ -56,7 +55,7 @@ export function PublicFooter() {
 
       <div className="public-container site-footer__legal">
         <span>{branding.siteName}</span>
-        <span>中转站比价、风险识别与真实测速参考</span>
+        <span>中转站稳定性测试、风险识别与真实测速参考</span>
       </div>
     </footer>
   );

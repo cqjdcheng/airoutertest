@@ -2,7 +2,7 @@ namespace CheapAI.Application.Public;
 
 public sealed class ModelRankingQuery
 {
-    public string RankingType { get; init; } = "price";
+    public string RankingType { get; init; } = "stability";
 
     public string Window { get; init; } = "7d";
 

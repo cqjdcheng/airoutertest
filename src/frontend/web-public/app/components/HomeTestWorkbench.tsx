@@ -29,7 +29,7 @@ export function HomeTestWorkbench({ popularModels = [] }: { popularModels?: Popu
       </div>
 
       <div className="market-panel home-workbench__panel">
-        <RelayTestPanel compact showHistory={false} modelOptions={modelOptions} />
+        <RelayTestPanel compact showHistory={false} modelOptions={modelOptions} allowFallbackModels={false} />
       </div>
     </section>
   );

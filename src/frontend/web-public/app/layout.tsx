@@ -5,7 +5,7 @@ import { PublicFooter } from "@/app/components/PublicFooter";
 import { getPublicSiteSettings } from "@/lib/siteSettings";
 import "./globals.css";
 
-const description = "按实际折算价、稳定性测试和风险证据筛选 AI 中转服务。";
+const description = "按稳定性测试、真实响应和风险证据筛选 AI 中转服务。";
 
 const gtmId = "GTM-MHRD6T3J";
 const googleAnalyticsId = "G-KR9EKLCW0M";
@@ -14,7 +14,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const settings = await getPublicSiteSettings();
 
   return {
-    title: `${settings.siteName} - AI 中转站比价与风险识别`,
+    title: `${settings.siteName} - AI 中转站稳定性与风险识别`,
     description,
     icons: settings.faviconUrl || settings.siteIconUrl ? [{ url: settings.faviconUrl || settings.siteIconUrl || "" }] : undefined
   };

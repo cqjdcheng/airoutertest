@@ -16,6 +16,8 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
 
     public async Task<PagedResult<PublicTestRecordListItemResponse>> GetLatestTestsAsync(int page, int pageSize, string? testType = null, CancellationToken cancellationToken = default)
     {
+        var normalizedPage = Math.Max(page, 1);
+        var normalizedPageSize = Math.Clamp(pageSize, 1, 200);
         var query = db.Queryable<TestRecordEntity, RelaySiteEntity, AiModelEntity>(
                 (record, site, model) => new JoinQueryInfos(
                     JoinType.Left, record.SiteId == site.Id,
@@ -30,6 +32,7 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
             query = query.Where((record, site, model) => record.TestType == normalizedType);
         }
 
+        RefAsync<int> total = 0;
         var rows = await query
             .OrderBy((record, site, model) => record.TestedAt, OrderByType.Desc)
             .Select((record, site, model) => new TestRecordQueryRow
@@ -62,7 +65,7 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
                 ChecksJson = record.ChecksJson,
                 TestedAt = record.TestedAt
             })
-            .ToListAsync(cancellationToken);
+            .ToPageListAsync(normalizedPage, normalizedPageSize, total, cancellationToken);
 
         var items = rows.Select(MapListItem).ToList();
 
@@ -71,11 +74,9 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
         {
             var risk = riskMap.GetValueOrDefault($"{row.SiteSlug}|{row.ModelSlug}");
             return row.RiskScore > 0 ? row : ApplyRisk(row, risk);
-        })
-            .OrderByDescending(x => x.TestedAt)
-            .ToList();
+        }).ToList();
 
-        return ToPaged(items.Skip((Math.Max(page, 1) - 1) * pageSize).Take(pageSize).ToList(), page, pageSize, items.Count);
+        return ToPaged(items, normalizedPage, normalizedPageSize, total);
     }
 
     public async Task<PublicTestRecordDetailResponse?> GetTestDetailAsync(ulong id, CancellationToken cancellationToken = default)
@@ -142,93 +143,165 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
         var sites = await db.Queryable<RelaySiteEntity>()
             .Where(x => x.DeletedAt == null && x.Status == "active")
             .ToListAsync(cancellationToken);
+        var siteIds = sites.Select(x => x.Id).ToList();
 
-        var snapshots = await db.Queryable<ModelRankingSnapshotEntity>()
-            .Where(x => x.RankingType == "value" && x.WindowType == "7d")
-            .ToListAsync(cancellationToken);
+        List<ModelRankingSnapshotEntity> snapshots = siteIds.Count == 0
+            ? []
+            : await db.Queryable<ModelRankingSnapshotEntity>()
+                .Where(x => siteIds.Contains(x.SiteId) && x.RankingType == "value" && x.WindowType == "7d")
+                .ToListAsync(cancellationToken);
 
-        var offers = await db.Queryable<RelayOfferEntity>()
-            .Where(x => x.Status == "active")
-            .ToListAsync(cancellationToken);
+        List<SiteModelCoverageRow> offers = siteIds.Count == 0
+            ? []
+            : await db.Queryable<RelayOfferEntity>()
+                .Where(x => siteIds.Contains(x.SiteId) && x.Status == "active")
+                .Select(x => new SiteModelCoverageRow
+                {
+                    SiteId = x.SiteId,
+                    ModelId = x.ModelId
+                })
+                .ToListAsync(cancellationToken);
 
-        var tests = await db.Queryable<TestRecordEntity>()
-            .OrderBy(x => x.TestedAt, OrderByType.Desc)
-            .ToListAsync(cancellationToken);
-        var status24hMap = BuildSiteStatus24hMap(tests);
+        var snapshotsBySiteId = snapshots
+            .GroupBy(x => x.SiteId)
+            .ToDictionary(x => x.Key, x => x.ToList());
+        var offerModelIdsBySiteId = offers
+            .GroupBy(x => x.SiteId)
+            .ToDictionary(x => x.Key, x => x.Select(row => row.ModelId).Distinct().ToList());
 
         var scored = sites.Select(site =>
         {
-            var siteSnapshots = snapshots.Where(x => x.SiteId == site.Id).ToList();
-            var siteTests = tests.Where(x => x.SiteId == site.Id).ToList();
+            var siteSnapshots = snapshotsBySiteId.GetValueOrDefault(site.Id) ?? [];
             var availability = Average(siteSnapshots.Select(x => x.AvailabilityScore));
             var stability = Average(siteSnapshots.Select(x => x.StabilityScore));
             var risk = siteSnapshots.Count == 0 ? 0m : siteSnapshots.Max(x => x.RiskScore ?? 0m);
             var enterpriseScore = (site.SupportsInvoice ? 34m : 0m) + (site.SupportsRefund ? 33m : 0m) + (site.HasDocs ? 33m : 0m);
             var score = Math.Round(availability * 0.35m + stability * 0.25m + Math.Max(0, 100 - risk) * 0.25m + enterpriseScore * 0.15m, 2);
+            var offerModelIds = offerModelIdsBySiteId.GetValueOrDefault(site.Id) ?? [];
 
-            return new PublicRelaySiteRankingItemResponse
+            return new SiteRankingRow
             {
-                SiteSlug = site.Slug,
-                SiteName = site.Name,
-                Description = site.Description,
-                SupportsInvoice = site.SupportsInvoice,
-                SupportsRefund = site.SupportsRefund,
-                HasDocs = site.HasDocs,
-                SiteScore = score,
-                AvailabilityScore = availability,
-                StabilityScore = stability,
-                RiskScore = risk,
-                RiskLevel = ResolveRiskLevel(risk),
-                CoveredModelCount = siteSnapshots.Select(x => x.ModelId)
-                    .Concat(offers.Where(x => x.SiteId == site.Id).Select(x => x.ModelId))
-                    .Distinct()
-                    .Count(),
-                LatestTestAt = siteTests.FirstOrDefault()?.TestedAt,
-                Status24h = status24hMap.GetValueOrDefault(site.Id) ?? BuildEmptySiteStatus24h()
+                SiteId = site.Id,
+                Item = new PublicRelaySiteRankingItemResponse
+                {
+                    SiteSlug = site.Slug,
+                    SiteName = site.Name,
+                    Description = site.Description,
+                    SupportsInvoice = site.SupportsInvoice,
+                    SupportsRefund = site.SupportsRefund,
+                    HasDocs = site.HasDocs,
+                    SiteScore = score,
+                    AvailabilityScore = availability,
+                    StabilityScore = stability,
+                    RiskScore = risk,
+                    RiskLevel = ResolveRiskLevel(risk),
+                    CoveredModelCount = siteSnapshots.Select(x => x.ModelId)
+                        .Concat(offerModelIds)
+                        .Distinct()
+                        .Count()
+                }
             };
-        }).OrderByDescending(x => x.SiteScore).ToList();
+        }).OrderByDescending(x => x.Item.SiteScore).ToList();
 
-        return ToPaged(scored.Skip((Math.Max(page, 1) - 1) * pageSize).Take(pageSize).ToList(), page, pageSize, scored.Count);
+        var normalizedPage = Math.Max(page, 1);
+        var normalizedPageSize = Math.Clamp(pageSize, 1, 100);
+        var pageRows = scored
+            .Skip((normalizedPage - 1) * normalizedPageSize)
+            .Take(normalizedPageSize)
+            .ToList();
+        var pageSiteIds = pageRows.Select(x => x.SiteId).ToList();
+        var statusSince = DateTime.UtcNow.AddHours(-24);
+        List<SiteStatusTestRow> statusTests = pageSiteIds.Count == 0
+            ? []
+            : await db.Queryable<TestRecordEntity>()
+                .Where(x =>
+                    pageSiteIds.Contains(x.SiteId) &&
+                    x.TestedAt >= statusSince &&
+                    x.TestType != "user" &&
+                    x.TestType != "self")
+                .Select(x => new SiteStatusTestRow
+                {
+                    SiteId = x.SiteId,
+                    ModelId = x.ModelId,
+                    Status = x.Status,
+                    RiskScore = x.RiskScore,
+                    RiskLevel = x.RiskLevel,
+                    MatchScore = x.MatchScore,
+                    TestedAt = x.TestedAt
+                })
+                .ToListAsync(cancellationToken);
+        var status24hMap = BuildSiteStatus24hMap(statusTests, statusSince);
+        List<SiteLatestTestRow> latestTestRows = pageSiteIds.Count == 0
+            ? []
+            : await db.Queryable<TestRecordEntity>()
+                .Where(x => pageSiteIds.Contains(x.SiteId) && x.TestType != "user" && x.TestType != "self")
+                .GroupBy(x => x.SiteId)
+                .Select(x => new SiteLatestTestRow
+                {
+                    SiteId = x.SiteId,
+                    TestedAt = SqlFunc.AggregateMax(x.TestedAt)
+                })
+                .ToListAsync(cancellationToken);
+        var latestTestMap = latestTestRows.ToDictionary(x => x.SiteId, x => x.TestedAt);
+        var items = pageRows
+            .Select(row =>
+            {
+                var latestTestAt = latestTestMap.TryGetValue(row.SiteId, out var testedAt)
+                    ? testedAt
+                    : (DateTime?)null;
+                return ApplySiteRuntimeStatus(
+                    row.Item,
+                    latestTestAt,
+                    status24hMap.GetValueOrDefault(row.SiteId) ?? BuildEmptySiteStatus24h());
+            })
+            .ToList();
+
+        return ToPaged(items, normalizedPage, normalizedPageSize, scored.Count);
     }
 
     public async Task<PagedResult<PublicModelCatalogItemResponse>> GetModelsAsync(int page, int pageSize, CancellationToken cancellationToken = default)
     {
+        var normalizedPage = Math.Max(page, 1);
+        var normalizedPageSize = Math.Clamp(pageSize, 1, 100);
+        RefAsync<int> total = 0;
         var models = await db.Queryable<AiModelEntity>()
             .Where(x => x.DeletedAt == null && x.Status == "active")
             .OrderBy(x => x.SortOrder, OrderByType.Asc)
             .OrderBy(x => x.Id, OrderByType.Desc)
-            .ToListAsync(cancellationToken);
-
-        var snapshots = await db.Queryable<ModelRankingSnapshotEntity, RelaySiteEntity>(
-                (snapshot, site) => snapshot.SiteId == site.Id)
-            .Where((snapshot, site) =>
-                snapshot.RankingType == "price" &&
-                snapshot.WindowType == "7d" &&
-                site.DeletedAt == null)
-            .Select((snapshot, site) => new ModelSnapshotRow
+            .Select(x => new ModelCatalogRow
             {
-                ModelId = snapshot.ModelId,
-                SiteSlug = site.Slug,
-                SiteName = site.Name,
-                EffectiveInputPriceUsd = snapshot.EffectiveInputPriceUsd,
-                EffectiveOutputPriceUsd = snapshot.EffectiveOutputPriceUsd,
-                StabilityScore = snapshot.StabilityScore,
-                RiskScore = snapshot.RiskScore,
-                RankPosition = snapshot.RankPosition
+                Id = x.Id,
+                Slug = x.Slug,
+                DisplayName = x.DisplayName,
+                Vendor = x.Vendor,
+                OfficialModelId = x.OfficialModelId,
+                RequestName = x.RequestName,
+                ApiType = x.ApiType
             })
-            .ToListAsync(cancellationToken);
+            .ToPageListAsync(normalizedPage, normalizedPageSize, total, cancellationToken);
 
-        var offers = await QueryActiveOfferRowsAsync(cancellationToken);
+        var modelIds = models.Select(x => x.Id).ToList();
+        List<ModelCoverageRow> coverageRows = modelIds.Count == 0
+            ? []
+            : await db.Queryable<RelayOfferEntity, RelaySiteEntity>(
+                    (offer, site) => offer.SiteId == site.Id)
+                .Where((offer, site) =>
+                    modelIds.Contains(offer.ModelId) &&
+                    offer.Status == "active" &&
+                    site.Status == "active" &&
+                    site.DeletedAt == null)
+                .Select((offer, site) => new ModelCoverageRow
+                {
+                    ModelId = offer.ModelId,
+                    SiteId = site.Id
+                })
+                .ToListAsync(cancellationToken);
+        var coverageMap = coverageRows
+            .GroupBy(x => x.ModelId)
+            .ToDictionary(x => x.Key, x => x.Select(row => row.SiteId).Distinct().Count());
 
         var items = models.Select(model =>
         {
-            var modelSnapshots = snapshots.Where(x => x.ModelId == model.Id).OrderBy(x => x.RankPosition).ToList();
-            var modelOffers = offers
-                .Where(x => x.ModelId == model.Id)
-                .OrderBy(x => x.PriceSort)
-                .ToList();
-            var best = modelOffers.FirstOrDefault();
-            var fallback = modelSnapshots.FirstOrDefault();
             return new PublicModelCatalogItemResponse
             {
                 ModelSlug = model.Slug,
@@ -237,46 +310,11 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
                 OfficialModelId = model.OfficialModelId,
                 RequestName = model.RequestName,
                 ApiType = model.ApiType,
-                OfficialInputPriceUsd = model.OfficialInputPriceUsd,
-                OfficialOutputPriceUsd = model.OfficialOutputPriceUsd,
-                CheapestSiteSlug = best?.SiteSlug,
-                CheapestSiteName = best?.SiteName,
-                EffectiveInputPriceUsd = best?.EffectiveInputPriceUsd,
-                EffectiveOutputPriceUsd = best?.EffectiveOutputPriceUsd,
-                StabilityScore = fallback?.StabilityScore,
-                RiskScore = fallback?.RiskScore,
-                RiskLevel = ResolveRiskLevel(fallback?.RiskScore),
-                RelaySiteCount = modelOffers.Select(x => x.SiteSlug)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .Count()
+                RelaySiteCount = coverageMap.GetValueOrDefault(model.Id)
             };
         }).ToList();
 
-        return ToPaged(items.Skip((Math.Max(page, 1) - 1) * pageSize).Take(pageSize).ToList(), page, pageSize, items.Count);
-    }
-
-    public async Task<IReadOnlyList<PublicCheapestRankingResponse>> GetCheapestRankingsAsync(IReadOnlyList<string> modelSlugs, int limit, CancellationToken cancellationToken = default)
-    {
-        var result = new List<PublicCheapestRankingResponse>();
-        foreach (var modelSlug in modelSlugs.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            var model = await db.Queryable<AiModelEntity>()
-                .FirstAsync(x => x.Slug == modelSlug && x.DeletedAt == null, cancellationToken);
-            if (model is null)
-            {
-                continue;
-            }
-
-            var rows = await QueryOfferRankingRowsAsync(model.Id, limit, cancellationToken);
-
-            result.Add(new PublicCheapestRankingResponse
-            {
-                ModelSlug = modelSlug,
-                Items = rows.Select(ApplyRiskLevel).ToList()
-            });
-        }
-
-        return result;
+        return ToPaged(items, normalizedPage, normalizedPageSize, total);
     }
 
     private async Task<Dictionary<string, RiskSnapshot>> LoadRiskMapAsync(IReadOnlyList<(string SiteSlug, string ModelSlug)> keys, CancellationToken cancellationToken)
@@ -286,10 +324,26 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
             return [];
         }
 
+        var siteSlugs = keys.Select(x => x.SiteSlug)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var modelSlugs = keys.Select(x => x.ModelSlug)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (siteSlugs.Count == 0 || modelSlugs.Count == 0)
+        {
+            return [];
+        }
+
+        var keySet = keys.Select(x => $"{x.SiteSlug}|{x.ModelSlug}")
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var risks = await db.Queryable<RiskEvidenceEntity, RelaySiteEntity, AiModelEntity>(
                 (risk, site, model) => new JoinQueryInfos(
                     JoinType.Inner, risk.SiteId == site.Id,
                     JoinType.Inner, risk.ModelId == model.Id))
+            .Where((risk, site, model) => siteSlugs.Contains(site.Slug) && modelSlugs.Contains(model.Slug))
             .Select((risk, site, model) => new
             {
                 site.Slug,
@@ -299,97 +353,13 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
             .ToListAsync(cancellationToken);
 
         return risks
+            .Where(x => keySet.Contains($"{x.Slug}|{x.ModelSlug}"))
             .GroupBy(x => $"{x.Slug}|{x.ModelSlug}")
             .ToDictionary(x => x.Key, x =>
             {
                 var score = x.Max(row => row.RiskScore);
                 return new RiskSnapshot(score, ResolveRiskLevel(score));
             });
-    }
-
-    private async Task<IReadOnlyList<ModelOfferRow>> QueryActiveOfferRowsAsync(CancellationToken cancellationToken)
-    {
-        var rows = await db.Queryable<RelayOfferEntity, RelaySiteEntity>(
-                (offer, site) => offer.SiteId == site.Id)
-            .Where((offer, site) =>
-                offer.Status == "active" &&
-                site.Status == "active" &&
-                site.DeletedAt == null)
-            .Select((offer, site) => new ModelOfferRow
-            {
-                ModelId = offer.ModelId,
-                SiteSlug = site.Slug,
-                SiteName = site.Name,
-                EffectiveInputPriceUsd = offer.EffectiveInputPriceUsd,
-                EffectiveOutputPriceUsd = offer.EffectiveOutputPriceUsd
-            })
-            .ToListAsync(cancellationToken);
-
-        return rows.Select(x => x with
-        {
-            PriceSort = (x.EffectiveInputPriceUsd ?? 999999m) + (x.EffectiveOutputPriceUsd ?? 999999m)
-        }).ToList();
-    }
-
-    private async Task<List<ModelRankingItemResponse>> QueryOfferRankingRowsAsync(ulong modelId, int limit, CancellationToken cancellationToken)
-    {
-        var rows = await db.Queryable<RelayOfferEntity, RelaySiteEntity>(
-                (offer, site) => offer.SiteId == site.Id)
-            .Where((offer, site) =>
-                offer.ModelId == modelId &&
-                offer.Status == "active" &&
-                site.Status == "active" &&
-                site.DeletedAt == null)
-            .Select((offer, site) => new ModelOfferRankingRow
-            {
-                SiteId = site.Id,
-                SiteSlug = site.Slug,
-                SiteName = site.Name,
-                EffectiveInputPriceUsd = offer.EffectiveInputPriceUsd,
-                EffectiveOutputPriceUsd = offer.EffectiveOutputPriceUsd,
-                SupportsInvoice = site.SupportsInvoice,
-                SupportsRefund = site.SupportsRefund,
-                HasDocs = site.HasDocs
-            })
-            .ToListAsync(cancellationToken);
-
-        var riskRows = await db.Queryable<RiskEvidenceEntity>()
-            .Where(x => x.ModelId == modelId)
-            .Select(x => new
-            {
-                x.SiteId,
-                x.RiskScore
-            })
-            .ToListAsync(cancellationToken);
-
-        var riskMap = riskRows
-            .GroupBy(x => x.SiteId)
-            .ToDictionary(x => x.Key, x => (decimal?)x.Max(row => row.RiskScore));
-
-        return rows
-            .OrderBy(x => (x.EffectiveInputPriceUsd ?? 999999m) + (x.EffectiveOutputPriceUsd ?? 999999m))
-            .Take(limit)
-            .Select(x =>
-            {
-                var riskScore = riskMap.GetValueOrDefault(x.SiteId);
-                return new ModelRankingItemResponse
-                {
-                    SiteSlug = x.SiteSlug,
-                    SiteName = x.SiteName,
-                    EffectiveInputPriceUsd = x.EffectiveInputPriceUsd,
-                    EffectiveOutputPriceUsd = x.EffectiveOutputPriceUsd,
-                    Availability24h = null,
-                    Stability7d = null,
-                    FirstTokenMs = null,
-                    FullResponseMs = null,
-                    RiskScore = riskScore,
-                    RiskLevel = ResolveRiskLevel(riskScore),
-                    SupportsInvoice = x.SupportsInvoice,
-                    SupportsRefund = x.SupportsRefund,
-                    HasDocs = x.HasDocs
-                };
-            })
-            .ToList();
     }
 
     private static decimal Average(IEnumerable<decimal?> values)
@@ -425,6 +395,7 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
             ErrorMessage = item.ErrorMessage,
             RiskScore = risk?.Score ?? 0,
             RiskLevel = risk?.Level ?? "low",
+            MatchScore = item.MatchScore,
             TestedAt = item.TestedAt
         };
     }
@@ -576,26 +547,6 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
         return status.Equals("succeeded", StringComparison.OrdinalIgnoreCase) ? "success" : status;
     }
 
-    private static ModelRankingItemResponse ApplyRiskLevel(ModelRankingItemResponse item)
-    {
-        return new ModelRankingItemResponse
-        {
-            SiteSlug = item.SiteSlug,
-            SiteName = item.SiteName,
-            EffectiveInputPriceUsd = item.EffectiveInputPriceUsd,
-            EffectiveOutputPriceUsd = item.EffectiveOutputPriceUsd,
-            Availability24h = item.Availability24h,
-            Stability7d = item.Stability7d,
-            FirstTokenMs = item.FirstTokenMs,
-            FullResponseMs = item.FullResponseMs,
-            RiskScore = item.RiskScore,
-            RiskLevel = ResolveRiskLevel(item.RiskScore),
-            SupportsInvoice = item.SupportsInvoice,
-            SupportsRefund = item.SupportsRefund,
-            HasDocs = item.HasDocs
-        };
-    }
-
     private static PagedResult<T> ToPaged<T>(IReadOnlyList<T> items, int page, int pageSize, long total)
     {
         return new PagedResult<T>
@@ -607,23 +558,42 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
         };
     }
 
-    private static Dictionary<ulong, PublicSiteStatus24hResponse> BuildSiteStatus24hMap(IReadOnlyList<TestRecordEntity> tests)
+    private static PublicRelaySiteRankingItemResponse ApplySiteRuntimeStatus(
+        PublicRelaySiteRankingItemResponse item,
+        DateTime? latestTestAt,
+        PublicSiteStatus24hResponse status24h)
     {
-        var since = DateTime.UtcNow.AddHours(-24);
+        return new PublicRelaySiteRankingItemResponse
+        {
+            SiteSlug = item.SiteSlug,
+            SiteName = item.SiteName,
+            Description = item.Description,
+            SupportsInvoice = item.SupportsInvoice,
+            SupportsRefund = item.SupportsRefund,
+            HasDocs = item.HasDocs,
+            SiteScore = item.SiteScore,
+            AvailabilityScore = item.AvailabilityScore,
+            StabilityScore = item.StabilityScore,
+            RiskScore = item.RiskScore,
+            RiskLevel = item.RiskLevel,
+            CoveredModelCount = item.CoveredModelCount,
+            LatestTestAt = latestTestAt,
+            Status24h = status24h
+        };
+    }
+
+    private static Dictionary<ulong, PublicSiteStatus24hResponse> BuildSiteStatus24hMap(IReadOnlyList<SiteStatusTestRow> tests, DateTime since)
+    {
         return tests
-            .Where(test =>
-                test.SiteId > 0 &&
-                test.TestedAt >= since &&
-                !string.Equals(test.TestType, "user", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(test.TestType, "self", StringComparison.OrdinalIgnoreCase))
             .GroupBy(test => test.SiteId)
             .ToDictionary(group => group.Key, group => BuildSiteStatus24h(group.ToList(), since));
     }
 
-    private static PublicSiteStatus24hResponse BuildSiteStatus24h(IReadOnlyList<TestRecordEntity> siteTests, DateTime since)
+    private static PublicSiteStatus24hResponse BuildSiteStatus24h(IReadOnlyList<SiteStatusTestRow> siteTests, DateTime since)
     {
         var totalTests = siteTests.Count;
         var successCount = siteTests.Count(test => IsSuccessStatus(test.Status));
+        var scores = siteTests.Select(ResolveTestScore).ToList();
         var buckets = Enumerable.Range(0, 24)
             .Select(index => BuildSiteStatusBucket(
                 siteTests.Where(test =>
@@ -637,6 +607,8 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
         {
             SuccessRate = totalTests == 0 ? 0 : Math.Round(successCount * 100m / totalTests, 1),
             TotalTests = totalTests,
+            TestedModelCount = siteTests.Where(test => test.ModelId > 0).Select(test => test.ModelId).Distinct().Count(),
+            AverageScore = scores.Count == 0 ? null : Math.Round(scores.Average(), 1),
             HealthyCount = buckets.Count(bucket => bucket.StatusTone == "success"),
             WarningCount = buckets.Count(bucket => bucket.StatusTone == "warning"),
             CriticalCount = buckets.Count(bucket => bucket.StatusTone == "danger"),
@@ -656,7 +628,7 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
         };
     }
 
-    private static PublicSiteStatusBucketResponse BuildSiteStatusBucket(IReadOnlyList<TestRecordEntity> bucketTests, DateTime slotStartAt)
+    private static PublicSiteStatusBucketResponse BuildSiteStatusBucket(IReadOnlyList<SiteStatusTestRow> bucketTests, DateTime slotStartAt)
     {
         var slotLabel = $"{slotStartAt.AddHours(8):HH}:00";
         if (bucketTests.Count == 0)
@@ -667,49 +639,60 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
                 SlotStartAt = slotStartAt,
                 StatusTone = "neutral",
                 StatusLabel = "暂无测试",
-                HasTest = false
+                HasTest = false,
+                TotalTests = 0,
+                SuccessCount = 0,
+                SuccessRate = 0,
+                TestedModelCount = 0
             };
         }
 
-        var critical = bucketTests
-            .Where(IsCriticalTest)
-            .OrderByDescending(test => test.TestedAt)
-            .FirstOrDefault();
-        if (critical is not null)
-        {
-            return MapSiteStatusBucket(critical, slotLabel, slotStartAt, "danger", "异常");
-        }
+        var totalTests = bucketTests.Count;
+        var successCount = bucketTests.Count(test => IsSuccessStatus(test.Status));
+        var averageScore = Math.Round(bucketTests.Select(ResolveTestScore).Average(), 1);
+        var testedModelCount = bucketTests.Where(test => test.ModelId > 0).Select(test => test.ModelId).Distinct().Count();
+        var latestTestedAt = bucketTests.Max(test => test.TestedAt);
+        var tone = ResolveScoreTone(averageScore);
 
-        var warning = bucketTests
-            .Where(IsWarningTest)
-            .OrderByDescending(test => test.TestedAt)
-            .FirstOrDefault();
-        if (warning is not null)
-        {
-            return MapSiteStatusBucket(warning, slotLabel, slotStartAt, "warning", "波动");
-        }
-
-        var healthy = bucketTests
-            .OrderByDescending(test => test.TestedAt)
-            .First();
-        return MapSiteStatusBucket(healthy, slotLabel, slotStartAt, "success", "正常");
-    }
-
-    private static PublicSiteStatusBucketResponse MapSiteStatusBucket(TestRecordEntity test, string slotLabel, DateTime slotStartAt, string tone, string label)
-    {
         return new PublicSiteStatusBucketResponse
         {
             SlotLabel = slotLabel,
             SlotStartAt = slotStartAt,
             StatusTone = tone,
-            StatusLabel = label,
+            StatusLabel = ResolveScoreLabel(averageScore),
             HasTest = true,
-            TestedAt = test.TestedAt,
-            ModelName = test.ModelName,
-            TestType = test.TestType,
-            Status = test.Status,
-            RiskScore = test.RiskScore
+            TotalTests = totalTests,
+            SuccessCount = successCount,
+            SuccessRate = Math.Round(successCount * 100m / totalTests, 1),
+            TestedModelCount = testedModelCount,
+            AverageScore = averageScore,
+            TestedAt = latestTestedAt
         };
+    }
+
+    private static decimal ResolveTestScore(SiteStatusTestRow test)
+    {
+        if (!IsSuccessStatus(test.Status))
+        {
+            return 0;
+        }
+
+        var score = test.MatchScore > 0 ? test.MatchScore : 100m - test.RiskScore;
+        return Math.Clamp(score, 0m, 100m);
+    }
+
+    private static string ResolveScoreTone(decimal score)
+    {
+        if (score >= 80m) return "success";
+        if (score >= 60m) return "warning";
+        return "danger";
+    }
+
+    private static string ResolveScoreLabel(decimal score)
+    {
+        if (score >= 80m) return "稳定";
+        if (score >= 60m) return "波动";
+        return "偏低";
     }
 
     private static bool IsSuccessStatus(string status)
@@ -718,22 +701,45 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
                string.Equals(status, "succeeded", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsCriticalTest(TestRecordEntity test)
-    {
-        return string.Equals(test.Status, "failed", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(test.Status, "error", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(test.RiskLevel, "high", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(test.RiskLevel, "critical", StringComparison.OrdinalIgnoreCase) ||
-               test.RiskScore >= 51;
-    }
-
-    private static bool IsWarningTest(TestRecordEntity test)
-    {
-        return string.Equals(test.RiskLevel, "medium", StringComparison.OrdinalIgnoreCase) ||
-               (test.RiskScore >= 21 && test.RiskScore < 51);
-    }
-
     private sealed record RiskSnapshot(decimal Score, string Level);
+
+    private sealed class SiteModelCoverageRow
+    {
+        public ulong SiteId { get; init; }
+
+        public ulong ModelId { get; init; }
+    }
+
+    private sealed class SiteRankingRow
+    {
+        public ulong SiteId { get; init; }
+
+        public PublicRelaySiteRankingItemResponse Item { get; init; } = new();
+    }
+
+    private sealed class SiteLatestTestRow
+    {
+        public ulong SiteId { get; init; }
+
+        public DateTime TestedAt { get; init; }
+    }
+
+    private sealed class SiteStatusTestRow
+    {
+        public ulong SiteId { get; init; }
+
+        public ulong ModelId { get; init; }
+
+        public string Status { get; init; } = string.Empty;
+
+        public decimal RiskScore { get; init; }
+
+        public string RiskLevel { get; init; } = "low";
+
+        public decimal MatchScore { get; init; }
+
+        public DateTime TestedAt { get; init; }
+    }
 
     private sealed class TestRecordQueryRow
     {
@@ -792,37 +798,21 @@ public sealed class PublicCatalogRepository(ISqlSugarClient db) : IPublicCatalog
         public DateTime TestedAt { get; init; }
     }
 
-    private sealed class ModelSnapshotRow
+    private sealed class ModelCatalogRow
     {
-        public ulong ModelId { get; init; }
-        public string SiteSlug { get; init; } = string.Empty;
-        public string SiteName { get; init; } = string.Empty;
-        public decimal? EffectiveInputPriceUsd { get; init; }
-        public decimal? EffectiveOutputPriceUsd { get; init; }
-        public decimal? StabilityScore { get; init; }
-        public decimal? RiskScore { get; init; }
-        public int RankPosition { get; init; }
+        public ulong Id { get; init; }
+        public string Slug { get; init; } = string.Empty;
+        public string DisplayName { get; init; } = string.Empty;
+        public string Vendor { get; init; } = string.Empty;
+        public string OfficialModelId { get; init; } = string.Empty;
+        public string RequestName { get; init; } = string.Empty;
+        public string ApiType { get; init; } = "openai";
     }
 
-    private sealed record ModelOfferRow
+    private sealed class ModelCoverageRow
     {
         public ulong ModelId { get; init; }
-        public string SiteSlug { get; init; } = string.Empty;
-        public string SiteName { get; init; } = string.Empty;
-        public decimal? EffectiveInputPriceUsd { get; init; }
-        public decimal? EffectiveOutputPriceUsd { get; init; }
-        public decimal PriceSort { get; init; }
-    }
-
-    private sealed class ModelOfferRankingRow
-    {
         public ulong SiteId { get; init; }
-        public string SiteSlug { get; init; } = string.Empty;
-        public string SiteName { get; init; } = string.Empty;
-        public decimal? EffectiveInputPriceUsd { get; init; }
-        public decimal? EffectiveOutputPriceUsd { get; init; }
-        public bool SupportsInvoice { get; init; }
-        public bool SupportsRefund { get; init; }
-        public bool HasDocs { get; init; }
     }
+
 }

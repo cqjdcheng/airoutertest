@@ -40,7 +40,7 @@ export default async function ArticlesPage({ searchParams }: { searchParams: Pro
           <p className="eyebrow">Articles</p>
           <h1 className="page-title mt-4">文章与使用指南</h1>
           <p className="body-lead mt-5 max-w-3xl">
-            查看 CheapAI 的价格折算、平台测试、风险证据和榜单使用说明。
+            查看 CheapAI 的平台测试、稳定性判断、风险证据和使用说明。
           </p>
         </div>
 

@@ -24,6 +24,13 @@ public sealed class AdminSitesController(RelaySiteAdminService relaySiteAdminSer
         return Ok(ApiResponseFactory.Success(HttpContext, result));
     }
 
+    [HttpGet("{id}/offers")]
+    public async Task<IActionResult> GetOffers(ulong id, [FromQuery] RelaySiteOfferQuery query, CancellationToken cancellationToken)
+    {
+        var result = await relaySiteAdminService.GetOffersAsync(id, query, cancellationToken);
+        return Ok(ApiResponseFactory.Success(HttpContext, result));
+    }
+
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateRelaySiteRequest request, CancellationToken cancellationToken)
     {
@@ -42,6 +49,27 @@ public sealed class AdminSitesController(RelaySiteAdminService relaySiteAdminSer
     public async Task<IActionResult> Update(ulong id, [FromBody] UpdateRelaySiteRequest request, CancellationToken cancellationToken)
     {
         await relaySiteAdminService.UpdateAsync(id, request, cancellationToken);
+        return Ok(ApiResponseFactory.Success(HttpContext));
+    }
+
+    [HttpPost("{id}/offers")]
+    public async Task<IActionResult> UpsertOffer(ulong id, [FromBody] RelaySiteOfferUpsertRequest request, CancellationToken cancellationToken)
+    {
+        var result = await relaySiteAdminService.UpsertOfferAsync(id, null, request, cancellationToken);
+        return Ok(ApiResponseFactory.Success(HttpContext, result));
+    }
+
+    [HttpPut("{id}/offers/{offerId}")]
+    public async Task<IActionResult> UpdateOffer(ulong id, ulong offerId, [FromBody] RelaySiteOfferUpsertRequest request, CancellationToken cancellationToken)
+    {
+        var result = await relaySiteAdminService.UpsertOfferAsync(id, offerId, request, cancellationToken);
+        return Ok(ApiResponseFactory.Success(HttpContext, result));
+    }
+
+    [HttpDelete("{id}/offers/{offerId}")]
+    public async Task<IActionResult> DeleteOffer(ulong id, ulong offerId, CancellationToken cancellationToken)
+    {
+        await relaySiteAdminService.DeleteOfferAsync(id, offerId, cancellationToken);
         return Ok(ApiResponseFactory.Success(HttpContext));
     }
 

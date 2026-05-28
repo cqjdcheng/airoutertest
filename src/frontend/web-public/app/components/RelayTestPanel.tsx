@@ -67,6 +67,13 @@ const fallbackModelOptions: ModelOption[] = [
   { label: "Gemini 3.1", slug: "gemini-3.1-pro", requestName: "gemini-3.1-pro", apiType: "openai" }
 ];
 
+const emptyModelOption: ModelOption = {
+  label: "",
+  slug: "",
+  requestName: "",
+  apiType: "openai"
+};
+
 const methodItems = [
   ["协议兼容", "检查 OpenAI Chat Completions 与 SSE 基础结构。"],
   ["流式完整性", "记录首 token、chunk 连续性、结束事件和异常中断。"],
@@ -79,17 +86,19 @@ export function RelayTestPanel({
   compact = false,
   showHistory,
   modelOptions,
+  allowFallbackModels = true,
   onTestCompleted
 }: {
   initialModel?: string;
   compact?: boolean;
   showHistory?: boolean;
   modelOptions?: ModelOption[];
+  allowFallbackModels?: boolean;
   onTestCompleted?: () => void;
 }) {
-  const resolvedModelOptions = modelOptions?.length ? modelOptions : fallbackModelOptions;
-  const initialModelSlug = initialModel ?? resolvedModelOptions[0]?.slug ?? "gpt-5.5";
-  const initialPreset = resolvedModelOptions.find((item) => item.slug === initialModelSlug) ?? resolvedModelOptions[0] ?? fallbackModelOptions[0];
+  const resolvedModelOptions = modelOptions?.length ? modelOptions : allowFallbackModels ? fallbackModelOptions : [];
+  const initialModelSlug = initialModel ?? resolvedModelOptions[0]?.slug ?? "";
+  const initialPreset = resolvedModelOptions.find((item) => item.slug === initialModelSlug) ?? resolvedModelOptions[0] ?? emptyModelOption;
   const initialCustomModel = resolvedModelOptions.some((item) => item.slug === initialModelSlug) ? "" : initialModelSlug;
   const shouldShowHistory = showHistory ?? !compact;
 
@@ -110,7 +119,7 @@ export function RelayTestPanel({
   const [error, setError] = useState("");
 
   const targetModel = customModel.trim() || selectedModel.requestName || selectedModel.slug;
-  const targetModelLabel = customModel.trim() || selectedModel.label;
+  const targetModelLabel = customModel.trim() || selectedModel.label || "自定义模型";
   const targetApiType = inferApiType(customModel.trim(), selectedModel.apiType);
 
   useEffect(() => {
@@ -156,6 +165,11 @@ export function RelayTestPanel({
   function openVerificationModal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+    if (!targetModel.trim()) {
+      setError("请选择热门模型或填写自定义模型名称。");
+      return;
+    }
+
     setVerificationOpen(true);
   }
 
@@ -259,7 +273,7 @@ export function RelayTestPanel({
         <div className="mt-5">
           <div className="mb-3 text-sm font-semibold text-[var(--text-secondary)]">目标模型</div>
           <div className="model-picker">
-            {resolvedModelOptions.map((model) => (
+            {resolvedModelOptions.length ? resolvedModelOptions.map((model) => (
               <button
                 className="model-chip"
                 data-active={!customModel.trim() && model.slug === selectedModel.slug}
@@ -274,7 +288,7 @@ export function RelayTestPanel({
                 {/* <span>{model.slug}</span> */}
                 {model.badge ? <em>{model.badge}</em> : null}
               </button>
-            ))}
+            )) : <div className="empty-state">暂无热门模型，请填写自定义模型名称。</div>}
           </div>
         </div>
 

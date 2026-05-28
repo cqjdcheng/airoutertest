@@ -1,4 +1,5 @@
 using CheapAI.Application.Common.Paging;
+using CheapAI.Application.Common.Exceptions;
 using CheapAI.Application.Models;
 using CheapAI.Application.Scoring;
 using CheapAI.Application.RelaySites;
@@ -29,6 +30,12 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
         return query.AnyAsync(cancellationToken);
     }
 
+    public Task<bool> ExistsByIdAsync(ulong id, CancellationToken cancellationToken = default)
+    {
+        return db.Queryable<RelaySiteEntity>()
+            .AnyAsync(x => x.Id == id && x.DeletedAt == null, cancellationToken);
+    }
+
     public async Task<RelaySiteDetailResponse?> GetByIdAsync(ulong id, CancellationToken cancellationToken = default)
     {
         var entity = await db.Queryable<RelaySiteEntity>()
@@ -39,13 +46,84 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
             return null;
         }
 
-        var offers = await LoadOffersAsync(id, cancellationToken);
+        var hasTestApiKey = await db.Queryable<RelayOfferEntity>()
+            .AnyAsync(x => x.SiteId == id && x.Status != "archived" && x.TestApiKey != null && x.TestApiKey != "", cancellationToken);
         var recentTests = await LoadRecentTestsAsync(id, cancellationToken);
-        return MapDetail(entity, offers, recentTests);
+        return MapDetail(entity, hasTestApiKey, recentTests);
+    }
+
+    public async Task<PagedResult<RelaySiteOfferResponse>> GetOffersAsync(
+        ulong siteId,
+        RelaySiteOfferQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        query = NormalizeOfferQuery(query);
+        var sqlQuery = db.Queryable<RelayOfferEntity, AiModelEntity>(
+                (offer, model) => offer.ModelId == model.Id)
+            .Where((offer, model) => offer.SiteId == siteId && offer.Status != "archived" && model.DeletedAt == null);
+
+        if (!string.IsNullOrWhiteSpace(query.Status) &&
+            !query.Status.Equals("all", StringComparison.OrdinalIgnoreCase))
+        {
+            sqlQuery = sqlQuery.Where((offer, model) => offer.Status == query.Status);
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Keyword))
+        {
+            var keyword = query.Keyword.Trim();
+            sqlQuery = sqlQuery.Where((offer, model) =>
+                model.DisplayName.Contains(keyword) ||
+                model.RequestName.Contains(keyword) ||
+                model.OfficialModelId.Contains(keyword) ||
+                model.Slug.Contains(keyword) ||
+                model.Vendor.Contains(keyword));
+        }
+
+        RefAsync<int> total = 0;
+        var items = await sqlQuery
+            .OrderBy((offer, model) => model.SortOrder, OrderByType.Asc)
+            .OrderBy((offer, model) => model.Id, OrderByType.Desc)
+            .OrderBy((offer, model) => offer.SourceType, OrderByType.Asc)
+            .Select((offer, model) => new RelaySiteOfferResponse
+            {
+                Id = offer.Id,
+                ModelId = model.Id,
+                ModelSlug = model.Slug,
+                Vendor = model.Vendor,
+                OfficialModelId = model.OfficialModelId,
+                RequestName = model.RequestName,
+                ApiType = model.ApiType,
+                DisplayName = model.DisplayName,
+                OfficialInputPriceUsd = offer.OfficialInputPriceUsd,
+                OfficialOutputPriceUsd = offer.OfficialOutputPriceUsd,
+                SiteInputPriceUsd = offer.SiteInputPriceUsd,
+                SiteOutputPriceUsd = offer.SiteOutputPriceUsd,
+                EffectiveInputPriceUsd = offer.EffectiveInputPriceUsd,
+                EffectiveOutputPriceUsd = offer.EffectiveOutputPriceUsd,
+                RechargeRatio = offer.RechargeRatio,
+                BonusRatio = offer.BonusRatio,
+                SourceType = offer.SourceType,
+                Status = offer.Status,
+                AutoTestEnabled = offer.AutoTestEnabled,
+                HasTestApiKey = offer.TestApiKey != null && offer.TestApiKey != "",
+                CrawledAt = offer.CrawledAt,
+                ReviewedAt = offer.ReviewedAt
+            })
+            .ToPageListAsync(query.Page, query.PageSize, total, cancellationToken);
+
+        return new PagedResult<RelaySiteOfferResponse>
+        {
+            Items = items,
+            Page = query.Page,
+            PageSize = query.PageSize,
+            Total = total
+        };
     }
 
     public async Task<PagedResult<RelaySiteListItemResponse>> GetPagedAsync(RelaySiteListQuery query, CancellationToken cancellationToken = default)
     {
+        var normalizedPage = Math.Max(query.Page, 1);
+        var normalizedPageSize = Math.Clamp(query.PageSize, 1, 100);
         var sqlQuery = db.Queryable<RelaySiteEntity>()
             .Where(x => x.DeletedAt == null);
 
@@ -60,9 +138,9 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
         }
 
         RefAsync<int> total = 0;
-        var items = await sqlQuery
+        var rows = await sqlQuery
             .OrderBy(x => x.Id, OrderByType.Desc)
-            .Select(x => new RelaySiteListItemResponse
+            .Select(x => new RelaySiteListRow
             {
                 Id = x.Id,
                 Slug = x.Slug,
@@ -73,20 +151,41 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
                 SupportsInvoice = x.SupportsInvoice,
                 HasDocs = x.HasDocs,
                 AutoTestEnabled = x.AutoTestEnabled,
-                HasTestApiKey = SqlFunc.Subqueryable<RelayOfferEntity>()
-                    .Where(offer => offer.SiteId == x.Id && offer.Status != "archived" && offer.TestApiKey != null && offer.TestApiKey != "")
-                    .Any(),
                 TestIntervalMinutes = x.TestIntervalMinutes,
                 LastAutoTestAt = x.LastAutoTestAt,
                 CreatedAtUtc = x.CreatedAt
             })
-            .ToPageListAsync(query.Page, query.PageSize, total, cancellationToken);
+            .ToPageListAsync(normalizedPage, normalizedPageSize, total, cancellationToken);
+        var siteIds = rows.Select(x => x.Id).ToList();
+        List<ulong> sitesWithTestKey = siteIds.Count == 0
+            ? []
+            : await db.Queryable<RelayOfferEntity>()
+                .Where(x => siteIds.Contains(x.SiteId) && x.Status != "archived" && x.TestApiKey != null && x.TestApiKey != "")
+                .Select(x => x.SiteId)
+                .ToListAsync(cancellationToken);
+        var testKeySiteIdSet = sitesWithTestKey.ToHashSet();
+        var items = rows.Select(x => new RelaySiteListItemResponse
+        {
+            Id = x.Id,
+            Slug = x.Slug,
+            Name = x.Name,
+            BaseUrl = x.BaseUrl,
+            Status = x.Status,
+            SupportsRefund = x.SupportsRefund,
+            SupportsInvoice = x.SupportsInvoice,
+            HasDocs = x.HasDocs,
+            AutoTestEnabled = x.AutoTestEnabled,
+            HasTestApiKey = testKeySiteIdSet.Contains(x.Id),
+            TestIntervalMinutes = x.TestIntervalMinutes,
+            LastAutoTestAt = x.LastAutoTestAt,
+            CreatedAtUtc = x.CreatedAtUtc
+        }).ToList();
 
         return new PagedResult<RelaySiteListItemResponse>
         {
             Items = items,
-            Page = query.Page,
-            PageSize = query.PageSize,
+            Page = normalizedPage,
+            PageSize = normalizedPageSize,
             Total = total
         };
     }
@@ -165,13 +264,99 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
                 .Where(x => x.Id == id && x.DeletedAt == null)
                 .ExecuteCommandAsync(cancellationToken);
 
-            await UpsertOffersCoreAsync(id, request.Offers, archiveMissing: true, cancellationToken);
             db.Ado.CommitTran();
         }
         catch
         {
             db.Ado.RollbackTran();
             throw;
+        }
+    }
+
+    public async Task<RelaySiteOfferResponse> UpsertOfferAsync(
+        ulong siteId,
+        ulong? offerId,
+        RelaySiteOfferUpsertRequest request,
+        ulong? adminUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var sourceType = NormalizeSourceType(request.SourceType);
+        RelayOfferEntity? existing = null;
+        if (offerId.HasValue)
+        {
+            existing = await db.Queryable<RelayOfferEntity>()
+                .FirstAsync(x => x.Id == offerId.Value && x.SiteId == siteId && x.Status != "archived", cancellationToken)
+                ?? throw new AppNotFoundException("报价不存在");
+        }
+
+        var modelId = await ResolveModelIdAsync(request, cancellationToken);
+        if (!offerId.HasValue)
+        {
+            existing = await db.Queryable<RelayOfferEntity>()
+                .FirstAsync(x => x.SiteId == siteId && x.ModelId == modelId && x.SourceType == sourceType, cancellationToken);
+        }
+
+        var now = DateTime.UtcNow;
+        var rechargeRatio = request.RechargeRatio <= 0 ? 1 : request.RechargeRatio;
+        var nextTestApiKey = string.IsNullOrWhiteSpace(request.TestApiKey)
+            ? existing?.TestApiKey
+            : request.TestApiKey.Trim();
+        var entity = new RelayOfferEntity
+        {
+            SiteId = siteId,
+            ModelId = modelId,
+            ChannelId = existing?.ChannelId,
+            SourceType = sourceType,
+            Currency = "USD",
+            OfficialInputPriceUsd = request.OfficialInputPriceUsd,
+            OfficialOutputPriceUsd = request.OfficialOutputPriceUsd,
+            SiteInputPriceUsd = request.SiteInputPriceUsd,
+            SiteOutputPriceUsd = request.SiteOutputPriceUsd,
+            RechargeRatio = rechargeRatio,
+            BonusRatio = request.BonusRatio,
+            EffectiveInputPriceUsd = CalculateEffective(request.SiteInputPriceUsd, rechargeRatio, request.BonusRatio),
+            EffectiveOutputPriceUsd = CalculateEffective(request.SiteOutputPriceUsd, rechargeRatio, request.BonusRatio),
+            Status = NormalizeOfferStatus(request.Status),
+            AutoTestEnabled = request.AutoTestEnabled,
+            TestApiKey = nextTestApiKey,
+            CrawledAt = existing?.CrawledAt,
+            ReviewedAt = now,
+            CreatedAt = existing?.CreatedAt ?? now,
+            UpdatedAt = now
+        };
+
+        if (existing is null)
+        {
+            entity.Id = (ulong)await db.Insertable(entity).ExecuteReturnBigIdentityAsync();
+        }
+        else
+        {
+            entity.Id = existing.Id;
+            await db.Updateable(entity).ExecuteCommandAsync(cancellationToken);
+        }
+
+        return await GetOfferByIdAsync(entity.Id, cancellationToken)
+            ?? throw new AppNotFoundException("报价不存在");
+    }
+
+    public async Task DeleteOfferAsync(
+        ulong siteId,
+        ulong offerId,
+        ulong? adminUserId,
+        CancellationToken cancellationToken = default)
+    {
+        var affected = await db.Updateable<RelayOfferEntity>()
+            .SetColumns(x => new RelayOfferEntity
+            {
+                Status = "archived",
+                UpdatedAt = DateTime.UtcNow
+            })
+            .Where(x => x.Id == offerId && x.SiteId == siteId && x.Status != "archived")
+            .ExecuteCommandAsync(cancellationToken);
+
+        if (affected == 0)
+        {
+            throw new AppNotFoundException("报价不存在");
         }
     }
 
@@ -279,7 +464,7 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
                 .FirstAsync(x =>
                     x.SiteId == siteId &&
                     x.ModelId == modelId &&
-                    x.SourceType == (string.IsNullOrWhiteSpace(offer.SourceType) ? "manual" : offer.SourceType.Trim()),
+                    x.SourceType == NormalizeSourceType(offer.SourceType),
                     cancellationToken);
             var nextTestApiKey = string.IsNullOrWhiteSpace(offer.TestApiKey)
                 ? existing?.TestApiKey
@@ -288,7 +473,8 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
             {
                 SiteId = siteId,
                 ModelId = modelId,
-                SourceType = string.IsNullOrWhiteSpace(offer.SourceType) ? "manual" : offer.SourceType.Trim(),
+                ChannelId = existing?.ChannelId,
+                SourceType = NormalizeSourceType(offer.SourceType),
                 Currency = "USD",
                 OfficialInputPriceUsd = offer.OfficialInputPriceUsd,
                 OfficialOutputPriceUsd = offer.OfficialOutputPriceUsd,
@@ -298,7 +484,7 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
                 BonusRatio = offer.BonusRatio,
                 EffectiveInputPriceUsd = CalculateEffective(offer.SiteInputPriceUsd, rechargeRatio, offer.BonusRatio),
                 EffectiveOutputPriceUsd = CalculateEffective(offer.SiteOutputPriceUsd, rechargeRatio, offer.BonusRatio),
-                Status = string.IsNullOrWhiteSpace(offer.Status) ? "active" : offer.Status,
+                Status = NormalizeOfferStatus(offer.Status),
                 AutoTestEnabled = offer.AutoTestEnabled,
                 TestApiKey = nextTestApiKey,
                 ReviewedAt = now,
@@ -339,6 +525,39 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
         }
 
         await update.ExecuteCommandAsync(cancellationToken);
+    }
+
+    private async Task<RelaySiteOfferResponse?> GetOfferByIdAsync(ulong offerId, CancellationToken cancellationToken)
+    {
+        return await db.Queryable<RelayOfferEntity, AiModelEntity>(
+                (offer, model) => offer.ModelId == model.Id)
+            .Where((offer, model) => offer.Id == offerId && offer.Status != "archived" && model.DeletedAt == null)
+            .Select((offer, model) => new RelaySiteOfferResponse
+            {
+                Id = offer.Id,
+                ModelId = model.Id,
+                ModelSlug = model.Slug,
+                Vendor = model.Vendor,
+                OfficialModelId = model.OfficialModelId,
+                RequestName = model.RequestName,
+                ApiType = model.ApiType,
+                DisplayName = model.DisplayName,
+                OfficialInputPriceUsd = offer.OfficialInputPriceUsd,
+                OfficialOutputPriceUsd = offer.OfficialOutputPriceUsd,
+                SiteInputPriceUsd = offer.SiteInputPriceUsd,
+                SiteOutputPriceUsd = offer.SiteOutputPriceUsd,
+                EffectiveInputPriceUsd = offer.EffectiveInputPriceUsd,
+                EffectiveOutputPriceUsd = offer.EffectiveOutputPriceUsd,
+                RechargeRatio = offer.RechargeRatio,
+                BonusRatio = offer.BonusRatio,
+                SourceType = offer.SourceType,
+                Status = offer.Status,
+                AutoTestEnabled = offer.AutoTestEnabled,
+                HasTestApiKey = offer.TestApiKey != null && offer.TestApiKey != "",
+                CrawledAt = offer.CrawledAt,
+                ReviewedAt = offer.ReviewedAt
+            })
+            .FirstAsync(cancellationToken);
     }
 
     private async Task<ulong> ResolveModelIdAsync(RelaySiteOfferUpsertRequest offer, CancellationToken cancellationToken)
@@ -448,7 +667,7 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
 
     private static RelaySiteDetailResponse MapDetail(
         RelaySiteEntity entity,
-        IReadOnlyList<RelaySiteOfferResponse> offers,
+        bool hasTestApiKey,
         IReadOnlyList<RelaySiteTestRecordResponse> recentTests)
     {
         return new RelaySiteDetailResponse
@@ -467,14 +686,35 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
             InviteUrl = entity.InviteUrl,
             RecentReview = entity.RecentReview,
             AutoTestEnabled = entity.AutoTestEnabled,
-            HasTestApiKey = offers.Any(x => x.HasTestApiKey),
+            HasTestApiKey = hasTestApiKey,
             TestIntervalMinutes = entity.TestIntervalMinutes,
             LastAutoTestAt = entity.LastAutoTestAt,
             CreatedAtUtc = entity.CreatedAt,
             UpdatedAtUtc = entity.UpdatedAt,
-            Offers = offers,
+            Offers = [],
             RecentTests = recentTests
         };
+    }
+
+    private static RelaySiteOfferQuery NormalizeOfferQuery(RelaySiteOfferQuery query)
+    {
+        return new RelaySiteOfferQuery
+        {
+            Keyword = string.IsNullOrWhiteSpace(query.Keyword) ? null : query.Keyword.Trim(),
+            Status = string.IsNullOrWhiteSpace(query.Status) ? "active" : query.Status.Trim(),
+            Page = Math.Max(1, query.Page),
+            PageSize = Math.Clamp(query.PageSize, 1, 100)
+        };
+    }
+
+    private static string NormalizeSourceType(string? sourceType)
+    {
+        return string.IsNullOrWhiteSpace(sourceType) ? "manual" : sourceType.Trim();
+    }
+
+    private static string NormalizeOfferStatus(string? status)
+    {
+        return string.IsNullOrWhiteSpace(status) ? "active" : status.Trim();
     }
 
     private static string? NormalizeOptionalSecret(string? value)
@@ -485,5 +725,21 @@ public sealed class RelaySiteRepository(ISqlSugarClient db) : IRelaySiteReposito
     private static int NormalizeTestInterval(int value)
     {
         return value < 15 ? 60 : value;
+    }
+
+    private sealed class RelaySiteListRow
+    {
+        public ulong Id { get; init; }
+        public string Slug { get; init; } = string.Empty;
+        public string Name { get; init; } = string.Empty;
+        public string BaseUrl { get; init; } = string.Empty;
+        public string Status { get; init; } = RelaySiteStatusValue.Draft;
+        public bool SupportsRefund { get; init; }
+        public bool SupportsInvoice { get; init; }
+        public bool HasDocs { get; init; }
+        public bool AutoTestEnabled { get; init; }
+        public int TestIntervalMinutes { get; init; } = 60;
+        public DateTime? LastAutoTestAt { get; init; }
+        public DateTime CreatedAtUtc { get; init; }
     }
 }

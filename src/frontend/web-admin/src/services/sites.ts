@@ -130,6 +130,23 @@ export async function fetchSite(id: number) {
   return apiRequest<RelaySiteDetail>(`/api/v1/admin/sites/${id}`);
 }
 
+export async function fetchSiteOffers(
+  siteId: number,
+  params: { page?: number; pageSize?: number; keyword?: string; status?: string } = {}
+) {
+  const search = new URLSearchParams({
+    page: String(params.page ?? 1),
+    pageSize: String(params.pageSize ?? 20),
+    status: params.status ?? "active"
+  });
+
+  if (params.keyword?.trim()) {
+    search.set("keyword", params.keyword.trim());
+  }
+
+  return apiRequest<PagedResult<RelaySiteOffer>>(`/api/v1/admin/sites/${siteId}/offers?${search.toString()}`);
+}
+
 export async function updateSite(id: number, payload: {
   slug?: string;
   name: string;
@@ -153,6 +170,24 @@ export async function updateSite(id: number, payload: {
     method: "PUT",
     body: JSON.stringify(payload)
   });
+}
+
+export async function createSiteOffer(siteId: number, payload: RelaySiteOffer) {
+  return apiRequest<RelaySiteOffer>(`/api/v1/admin/sites/${siteId}/offers`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateSiteOffer(siteId: number, offerId: number, payload: RelaySiteOffer) {
+  return apiRequest<RelaySiteOffer>(`/api/v1/admin/sites/${siteId}/offers/${offerId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteSiteOffer(siteId: number, offerId: number) {
+  return apiRequest<void>(`/api/v1/admin/sites/${siteId}/offers/${offerId}`, { method: "DELETE" });
 }
 
 export async function updateSiteStatus(id: number, status: string) {

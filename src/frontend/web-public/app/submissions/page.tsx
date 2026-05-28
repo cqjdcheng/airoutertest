@@ -34,7 +34,7 @@ export default function SubmissionPage() {
             <p className="eyebrow">Site Submission</p>
             <h1 className="page-title mt-4">提交中转站</h1>
             <p className="body-lead mt-5">
-              提交后进入后台审核，不会自动公开上架。我们会优先收录可稳定测试、价格口径清晰的站点。
+              提交后进入后台审核，不会自动公开上架。我们会优先收录可稳定测试、资料清晰的站点。
             </p>
 
             <form onSubmit={submit} className="mt-8 grid gap-4">
@@ -57,8 +57,8 @@ export default function SubmissionPage() {
             <h2 className="text-xl font-semibold tracking-tight">审核规则</h2>
             <div className="mt-5 space-y-4 text-sm leading-7 text-[var(--text-secondary)]">
               <p>公开提交只进入待审核队列，不直接影响榜单。</p>
-              <p>站点上线前需要补齐基础资料、报价口径和平台测试账号。</p>
-              <p>存在价格虚标、模型偷换或假响应风险的站点会被标记。</p>
+              <p>站点上线前需要补齐基础资料、文档入口和平台测试账号。</p>
+              <p>存在模型偷换、假响应或稳定性异常风险的站点会被标记。</p>
             </div>
           </aside>
         </div>

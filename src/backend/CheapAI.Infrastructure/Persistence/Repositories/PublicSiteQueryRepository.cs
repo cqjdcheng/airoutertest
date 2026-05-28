@@ -32,13 +32,12 @@ public sealed class PublicSiteQueryRepository(ISqlSugarClient db) : IPublicSiteQ
         }
 
         var offerRows = await offerQuery
-            .OrderBy((offer, model) => offer.EffectiveInputPriceUsd, OrderByType.Asc)
+            .OrderBy((offer, model) => model.SortOrder, OrderByType.Asc)
+            .OrderBy((offer, model) => model.Id, OrderByType.Desc)
             .Select((offer, model) => new SiteModelPriceRow
             {
                 ModelSlug = model.Slug,
-                ModelName = model.DisplayName,
-                EffectiveInputPriceUsd = offer.EffectiveInputPriceUsd,
-                EffectiveOutputPriceUsd = offer.EffectiveOutputPriceUsd
+                ModelName = model.DisplayName
             })
             .ToListAsync(cancellationToken);
 
@@ -46,7 +45,7 @@ public sealed class PublicSiteQueryRepository(ISqlSugarClient db) : IPublicSiteQ
                 (snapshot, model) => snapshot.ModelId == model.Id)
             .Where((snapshot, model) =>
                 snapshot.SiteId == site.Id &&
-                snapshot.RankingType == "price" &&
+                snapshot.RankingType == "stability" &&
                 snapshot.WindowType == rankingWindow &&
                 model.DeletedAt == null);
 
@@ -61,8 +60,6 @@ public sealed class PublicSiteQueryRepository(ISqlSugarClient db) : IPublicSiteQ
             {
                 ModelSlug = model.Slug,
                 ModelName = model.DisplayName,
-                EffectiveInputPriceUsd = snapshot.EffectiveInputPriceUsd,
-                EffectiveOutputPriceUsd = snapshot.EffectiveOutputPriceUsd,
                 AvailabilityScore = snapshot.AvailabilityScore,
                 StabilityScore = snapshot.StabilityScore,
                 RiskScore = snapshot.RiskScore
@@ -74,9 +71,7 @@ public sealed class PublicSiteQueryRepository(ISqlSugarClient db) : IPublicSiteQ
             : snapshotRows.Select(x => new SiteModelPriceRow
             {
                 ModelSlug = x.ModelSlug,
-                ModelName = x.ModelName,
-                EffectiveInputPriceUsd = x.EffectiveInputPriceUsd,
-                EffectiveOutputPriceUsd = x.EffectiveOutputPriceUsd
+                ModelName = x.ModelName
             }).ToList();
 
         var dedupedRows = modelPriceRows
@@ -84,7 +79,7 @@ public sealed class PublicSiteQueryRepository(ISqlSugarClient db) : IPublicSiteQ
             .Select(x => x.First())
             .ToList();
 
-        var recent24hTests = await QueryRecent24hTestsAsync(site.Id, modelSlug, cancellationToken);
+        var recentStatusTests = await QueryRecentTestsAsync(site.Id, modelSlug, DateTime.UtcNow.Date.AddDays(-29), cancellationToken);
         var latestTests = await QueryLatestTestsAsync(site.Id, modelSlug, cancellationToken);
         var maxRiskScore = latestTests.Count > 0
             ? latestTests.Max(x => x.RiskScore ?? 0m)
@@ -112,15 +107,9 @@ public sealed class PublicSiteQueryRepository(ISqlSugarClient db) : IPublicSiteQ
                 ModelSlug = x.ModelSlug,
                 ModelName = x.ModelName
             }).ToList(),
-            Pricing = dedupedRows.Select(x => new PublicSitePricingResponse
-            {
-                ModelSlug = x.ModelSlug,
-                ModelName = x.ModelName,
-                EffectiveInputPriceUsd = x.EffectiveInputPriceUsd,
-                EffectiveOutputPriceUsd = x.EffectiveOutputPriceUsd
-            }).ToList(),
+            Pricing = [],
             LatestTests = latestTests,
-            Status24h = BuildSiteStatus24h(recent24hTests),
+            Status24h = BuildSiteStatus24h(recentStatusTests),
             RiskSummary = new PublicSiteRiskSummaryResponse
             {
                 MaxRiskScore = maxRiskScore,
@@ -128,10 +117,7 @@ public sealed class PublicSiteQueryRepository(ISqlSugarClient db) : IPublicSiteQ
             },
             Trends = new PublicSiteTrendsResponse
             {
-                Price =
-                [
-                    new PublicTrendPointResponse { Label = "当前", Value = dedupedRows.FirstOrDefault()?.EffectiveInputPriceUsd ?? 0m }
-                ],
+                Price = [],
                 Stability =
                 [
                     new PublicTrendPointResponse { Label = rankingWindow, Value = snapshotRows.FirstOrDefault()?.StabilityScore ?? 0m }
@@ -140,9 +126,8 @@ public sealed class PublicSiteQueryRepository(ISqlSugarClient db) : IPublicSiteQ
         };
     }
 
-    private async Task<List<SiteTestRecordRow>> QueryRecent24hTestsAsync(ulong siteId, string? modelSlug, CancellationToken cancellationToken)
+    private async Task<List<SiteTestRecordRow>> QueryRecentTestsAsync(ulong siteId, string? modelSlug, DateTime since, CancellationToken cancellationToken)
     {
-        var since = DateTime.UtcNow.AddHours(-24);
         var query = db.Queryable<TestRecordEntity, AiModelEntity>(
                 (record, model) => record.ModelId == model.Id)
             .Where((record, model) =>
@@ -163,6 +148,7 @@ public sealed class PublicSiteQueryRepository(ISqlSugarClient db) : IPublicSiteQ
             .Select((record, model) => new SiteTestRecordRow
             {
                 Id = record.Id,
+                ModelId = record.ModelId,
                 ModelSlug = model.Slug,
                 ModelName = model.DisplayName,
                 TestType = record.TestType,
@@ -196,6 +182,7 @@ public sealed class PublicSiteQueryRepository(ISqlSugarClient db) : IPublicSiteQ
             .Select((record, model) => new SiteTestRecordRow
             {
                 Id = record.Id,
+                ModelId = record.ModelId,
                 ModelSlug = model.Slug,
                 ModelName = model.DisplayName,
                 TestType = record.TestType,
@@ -232,9 +219,12 @@ public sealed class PublicSiteQueryRepository(ISqlSugarClient db) : IPublicSiteQ
     private static PublicSiteStatus24hResponse BuildSiteStatus24h(IReadOnlyList<SiteTestRecordRow> tests)
     {
         var since = DateTime.UtcNow.AddHours(-24);
+        var windowTests = tests
+            .Where(test => test.TestedAt.HasValue && test.TestedAt.Value >= since)
+            .ToList();
         var buckets = Enumerable.Range(0, 24)
             .Select(index => BuildSiteStatusBucket(
-                tests.Where(test =>
+                windowTests.Where(test =>
                     test.TestedAt.HasValue &&
                     test.TestedAt.Value >= since.AddHours(index) &&
                     test.TestedAt.Value < since.AddHours(index + 1))
@@ -242,24 +232,50 @@ public sealed class PublicSiteQueryRepository(ISqlSugarClient db) : IPublicSiteQ
                 since.AddHours(index)))
             .ToList();
 
-        var totalTests = tests.Count;
-        var successCount = tests.Count(test => IsSuccessStatus(test.Status));
+        var totalTests = windowTests.Count;
+        var successCount = windowTests.Count(test => IsSuccessStatus(test.Status));
+        var scores = windowTests.Select(ResolveTestScore).ToList();
 
         return new PublicSiteStatus24hResponse
         {
             SuccessRate = totalTests == 0 ? 0 : Math.Round(successCount * 100m / totalTests, 1),
             TotalTests = totalTests,
+            TestedModelCount = windowTests.Where(test => test.ModelId > 0).Select(test => test.ModelId).Distinct().Count(),
+            AverageScore = scores.Count == 0 ? null : Math.Round(scores.Average(), 1),
             HealthyCount = buckets.Count(bucket => bucket.StatusTone == "success"),
             WarningCount = buckets.Count(bucket => bucket.StatusTone == "warning"),
             CriticalCount = buckets.Count(bucket => bucket.StatusTone == "danger"),
-            LastTestedAt = tests.FirstOrDefault()?.TestedAt,
-            Buckets = buckets
+            LastTestedAt = windowTests.OrderByDescending(test => test.TestedAt).FirstOrDefault()?.TestedAt,
+            Buckets = buckets,
+            DailyBuckets = BuildSiteStatusDailyBuckets(tests)
         };
     }
 
-    private static PublicSiteStatusBucketResponse BuildSiteStatusBucket(IReadOnlyList<SiteTestRecordRow> tests, DateTime slotStartAt)
+    private static IReadOnlyList<PublicSiteStatusBucketResponse> BuildSiteStatusDailyBuckets(IReadOnlyList<SiteTestRecordRow> tests)
     {
-        var slotLabel = $"{slotStartAt.AddHours(8):HH}:00";
+        var today = DateTime.UtcNow.Date;
+        var since = today.AddDays(-29);
+        return Enumerable.Range(0, 30)
+            .Select(index =>
+            {
+                var dayStart = since.AddDays(index);
+                var dayTests = tests
+                    .Where(test =>
+                        test.TestedAt.HasValue &&
+                        test.TestedAt.Value >= dayStart &&
+                        test.TestedAt.Value < dayStart.AddDays(1))
+                    .ToList();
+                return BuildSiteStatusBucket(dayTests, dayStart, dayStart.AddHours(8).ToString("MM/dd"));
+            })
+            .ToList();
+    }
+
+    private static PublicSiteStatusBucketResponse BuildSiteStatusBucket(
+        IReadOnlyList<SiteTestRecordRow> tests,
+        DateTime slotStartAt,
+        string? slotLabelOverride = null)
+    {
+        var slotLabel = slotLabelOverride ?? $"{slotStartAt.AddHours(8):HH}:00";
         if (tests.Count == 0)
         {
             return new PublicSiteStatusBucketResponse
@@ -268,39 +284,34 @@ public sealed class PublicSiteQueryRepository(ISqlSugarClient db) : IPublicSiteQ
                 SlotStartAt = slotStartAt,
                 StatusTone = "neutral",
                 StatusLabel = "暂无测试",
-                HasTest = false
+                HasTest = false,
+                TotalTests = 0,
+                SuccessCount = 0,
+                SuccessRate = 0,
+                TestedModelCount = 0
             };
         }
 
-        var critical = tests.Where(IsCriticalTest).OrderByDescending(test => test.TestedAt).FirstOrDefault();
-        if (critical is not null)
-        {
-            return MapSiteStatusBucket(critical, slotLabel, slotStartAt, "danger", "异常");
-        }
+        var totalTests = tests.Count;
+        var successCount = tests.Count(test => IsSuccessStatus(test.Status));
+        var averageScore = Math.Round(tests.Select(ResolveTestScore).Average(), 1);
+        var latestTestedAt = tests
+            .Where(test => test.TestedAt.HasValue)
+            .Max(test => test.TestedAt);
 
-        var warning = tests.Where(IsWarningTest).OrderByDescending(test => test.TestedAt).FirstOrDefault();
-        if (warning is not null)
-        {
-            return MapSiteStatusBucket(warning, slotLabel, slotStartAt, "warning", "波动");
-        }
-
-        return MapSiteStatusBucket(tests.OrderByDescending(test => test.TestedAt).First(), slotLabel, slotStartAt, "success", "正常");
-    }
-
-    private static PublicSiteStatusBucketResponse MapSiteStatusBucket(SiteTestRecordRow test, string slotLabel, DateTime slotStartAt, string tone, string label)
-    {
         return new PublicSiteStatusBucketResponse
         {
             SlotLabel = slotLabel,
             SlotStartAt = slotStartAt,
-            StatusTone = tone,
-            StatusLabel = label,
+            StatusTone = ResolveScoreTone(averageScore),
+            StatusLabel = ResolveScoreLabel(averageScore),
             HasTest = true,
-            TestedAt = test.TestedAt,
-            ModelName = test.ModelName,
-            TestType = test.TestType,
-            Status = test.Status,
-            RiskScore = test.RiskScore
+            TotalTests = totalTests,
+            SuccessCount = successCount,
+            SuccessRate = totalTests == 0 ? 0 : Math.Round(successCount * 100m / totalTests, 1),
+            TestedModelCount = tests.Where(test => test.ModelId > 0).Select(test => test.ModelId).Distinct().Count(),
+            AverageScore = averageScore,
+            TestedAt = latestTestedAt
         };
     }
 
@@ -310,19 +321,29 @@ public sealed class PublicSiteQueryRepository(ISqlSugarClient db) : IPublicSiteQ
                string.Equals(status, "succeeded", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsCriticalTest(SiteTestRecordRow test)
+    private static decimal ResolveTestScore(SiteTestRecordRow test)
     {
-        return string.Equals(test.Status, "failed", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(test.Status, "error", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(test.RiskLevel, "high", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(test.RiskLevel, "critical", StringComparison.OrdinalIgnoreCase) ||
-               (test.RiskScore ?? 0m) >= 51m;
+        if (!IsSuccessStatus(test.Status))
+        {
+            return 0;
+        }
+
+        var score = test.MatchScore is > 0 ? test.MatchScore.Value : 100m - (test.RiskScore ?? 0m);
+        return Math.Clamp(score, 0m, 100m);
     }
 
-    private static bool IsWarningTest(SiteTestRecordRow test)
+    private static string ResolveScoreTone(decimal score)
     {
-        return string.Equals(test.RiskLevel, "medium", StringComparison.OrdinalIgnoreCase) ||
-               ((test.RiskScore ?? 0m) >= 21m && (test.RiskScore ?? 0m) < 51m);
+        if (score >= 80m) return "success";
+        if (score >= 60m) return "warning";
+        return "danger";
+    }
+
+    private static string ResolveScoreLabel(decimal score)
+    {
+        if (score >= 80m) return "稳定";
+        if (score >= 60m) return "波动";
+        return "偏低";
     }
 
     private static string ResolveRiskLevel(decimal? score)
@@ -352,6 +373,7 @@ public sealed class PublicSiteQueryRepository(ISqlSugarClient db) : IPublicSiteQ
     private sealed class SiteTestRecordRow
     {
         public ulong Id { get; init; }
+        public ulong ModelId { get; init; }
         public string ModelSlug { get; init; } = string.Empty;
         public string ModelName { get; init; } = string.Empty;
         public string TestType { get; init; } = string.Empty;

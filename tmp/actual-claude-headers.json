@@ -1,0 +1,23 @@
+{
+  "accept": "application/json",
+  "authorization": "***",
+  "content-type": "application/json",
+  "user-agent": "claude-cli/2.1.150 (external, sdk-cli)",
+  "x-claude-code-session-id": "d0418351-401d-4e0d-b53f-a43d4617142d",
+  "x-stainless-arch": "x64",
+  "x-stainless-lang": "js",
+  "x-stainless-os": "Windows",
+  "x-stainless-package-version": "0.94.0",
+  "x-stainless-retry-count": "0",
+  "x-stainless-runtime": "node",
+  "x-stainless-runtime-version": "v24.3.0",
+  "x-stainless-timeout": "600",
+  "anthropic-beta": "claude-code-20250219,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,effort-2025-11-24",
+  "anthropic-dangerous-direct-browser-access": "true",
+  "anthropic-version": "2023-06-01",
+  "x-app": "cli",
+  "connection": "keep-alive",
+  "host": "127.0.0.1:8787",
+  "accept-encoding": "gzip, deflate, br, zstd",
+  "content-length": "104542"
+}

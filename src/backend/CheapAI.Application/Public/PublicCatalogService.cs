@@ -24,8 +24,4 @@ public sealed class PublicCatalogService(IPublicCatalogRepository publicCatalogR
         return publicCatalogRepository.GetModelsAsync(page, Math.Clamp(pageSize, 1, 100), cancellationToken);
     }
 
-    public Task<IReadOnlyList<PublicCheapestRankingResponse>> GetCheapestRankingsAsync(IReadOnlyList<string> modelSlugs, int limit, CancellationToken cancellationToken = default)
-    {
-        return publicCatalogRepository.GetCheapestRankingsAsync(modelSlugs, Math.Clamp(limit, 1, 20), cancellationToken);
-    }
 }

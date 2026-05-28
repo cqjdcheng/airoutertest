@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { BackLink, PublicHeader } from "@/app/components/PublicHeader";
 import { SiteStatusTimeline, type SiteStatus24h } from "@/app/components/SiteStatus24h";
+import { TrackedOutboundLink } from "@/app/components/TrackedOutboundLink";
 import { getJson, type PublicEnvelope } from "@/lib/api";
-import { formatDateTime, money, score, trustScore } from "@/lib/format";
+import { formatDateTime, score, trustScore } from "@/lib/format";
 import { SiteDetailDataTabs } from "./SiteDetailDataTabs";
 
 export const dynamic = "force-dynamic";
@@ -26,12 +27,6 @@ export type SiteDetailResponse = {
     modelSlug: string;
     modelName: string;
   }>;
-  pricing: Array<{
-    modelSlug: string;
-    modelName: string;
-    effectiveInputPriceUsd?: number;
-    effectiveOutputPriceUsd?: number;
-  }>;
   latestTests: Array<{
     id: number;
     publicId: string;
@@ -53,7 +48,6 @@ export type SiteDetailResponse = {
     riskLevel: string;
   };
   trends: {
-    price: Array<{ label: string; value: number }>;
     stability: Array<{ label: string; value: number }>;
   };
 };
@@ -65,19 +59,9 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
   const firstModel = payload?.supportedModels[0]?.modelSlug ?? "gpt-5.5";
 
   const supportedModels = payload?.supportedModels ?? [];
-  const pricing = payload?.pricing ?? [];
   const latestTests = payload?.latestTests ?? [];
   const status24h = payload?.status24h;
-  const validInputPrices = pricing
-    .map((item) => item.effectiveInputPriceUsd)
-    .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0);
-  const validOutputPrices = pricing
-    .map((item) => item.effectiveOutputPriceUsd)
-    .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0);
-  const minInputPrice = validInputPrices.length ? Math.min(...validInputPrices) : null;
-  const minOutputPrice = validOutputPrices.length ? Math.min(...validOutputPrices) : null;
   const latestTest = latestTests[0];
-  const validPriceTrend = (payload?.trends.price ?? []).filter((point) => Number.isFinite(point.value) && point.value >= 0);
   const validStabilityTrend = (payload?.trends.stability ?? []).filter((point) => Number.isFinite(point.value) && point.value >= 0);
 
   return (
@@ -95,19 +79,19 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               {payload?.site.websiteUrl ? (
-                <a className="primary-button" href={payload.site.websiteUrl}>
+                <TrackedOutboundLink className="primary-button" href={payload.site.websiteUrl} siteSlug={payload.site.slug} targetType="website">
                   访问官网
-                </a>
+                </TrackedOutboundLink>
               ) : null}
               {payload?.site.inviteUrl ? (
-                <a className="secondary-button" href={payload.site.inviteUrl}>
+                <TrackedOutboundLink className="secondary-button" href={payload.site.inviteUrl} siteSlug={payload.site.slug} targetType="invite">
                   邀请链接
-                </a>
+                </TrackedOutboundLink>
               ) : null}
               {payload?.site.docsUrl ? (
-                <a className="secondary-button" href={payload.site.docsUrl}>
+                <TrackedOutboundLink className="secondary-button" href={payload.site.docsUrl} siteSlug={payload.site.slug} targetType="docs">
                   查看文档
-                </a>
+                </TrackedOutboundLink>
               ) : null}
             </div>
           </div>
@@ -130,7 +114,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
 
         <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <SummaryCard title="支持模型" value={`${supportedModels.length} 个`} note={supportedModels.slice(0, 3).map((item) => item.modelName).join(" / ") || "暂无模型数据"} />
-          <SummaryCard title="价格摘要" value={minInputPrice === null ? "暂无价格" : `${money(minInputPrice)} 起`} note={`输出最低 ${minOutputPrice === null ? "-" : money(minOutputPrice)}，共 ${pricing.length} 条价格`} />
+          <SummaryCard title="稳定性摘要" value={status24h?.averageScore == null ? "暂无评分" : `${score(status24h.averageScore, 0)} 分`} note={`24 小时覆盖 ${status24h?.testedModelCount ?? 0} 个测试模型`} />
           <SummaryCard title="最近测试摘要" value={latestTest ? statusLabel(latestTest.status) : "暂无测试"} note={latestTest ? `${latestTest.modelName} · ${formatDateTime(latestTest.testedAt)}` : "还没有平台测试记录"} />
           <SummaryCard title="站点能力" value={payload?.site.status === "active" ? "已收录" : payload?.site.status ?? "未知"} note={`${payload?.site.supportsInvoice ? "可开票" : "不开票"} · ${payload?.site.supportsRefund ? "可退款" : "不支持退款"} · ${payload?.site.hasDocs ? "有文档" : "无文档"}`} />
         </section>
@@ -153,9 +137,9 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
             <div className="mt-5 flex flex-wrap gap-3">
               {supportedModels.length ? (
                 supportedModels.slice(0, 10).map((item) => (
-                  <Link key={item.modelSlug} href={`/rankings?model=${encodeURIComponent(item.modelSlug)}`} className="secondary-button">
+                  <span key={item.modelSlug} className="secondary-button">
                     {item.modelName}
-                  </Link>
+                  </span>
                 ))
               ) : (
                 <span className="text-sm text-[var(--text-secondary)]">暂无模型数据</span>
@@ -165,9 +149,8 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
 
           <div className="panel-card p-6">
             <h2 className="text-xl font-semibold tracking-tight">趋势摘要</h2>
-            <p className="mt-2 text-sm leading-7 text-[var(--text-secondary)]">趋势用于观察价格和稳定性是否持续波动。异常价格趋势会被隐藏，避免用无效负值影响判断。</p>
+            <p className="mt-2 text-sm leading-7 text-[var(--text-secondary)]">趋势用于观察稳定性是否持续波动。中转站价格变化快，价格不代表一定的服务品质，这里优先呈现测试稳定性。</p>
             <div className="mt-5 space-y-4">
-              <TrendBars title="价格趋势" points={validPriceTrend} suffix="" />
               <TrendBars title="稳定性趋势" points={validStabilityTrend} suffix="%" />
             </div>
           </div>
@@ -183,19 +166,19 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ sit
           <div className="panel-card p-6">
             <h2 className="text-xl font-semibold tracking-tight">分数说明</h2>
             <p className="mt-3 text-sm leading-7 text-[var(--text-secondary)]">
-              分数综合模型替换、响应异常、价格虚标、稳定性波动等证据，分数越高表示当前站点越可信。
+              分数综合模型替换、响应异常、稳定性波动等证据，分数越高表示当前站点越可信。
             </p>
           </div>
           <div className="panel-card p-6">
             <h2 className="text-xl font-semibold tracking-tight">采购建议</h2>
             <p className="mt-3 text-sm leading-7 text-[var(--text-secondary)]">
-              个人开发者优先看价格和可用性；企业用户应同时确认开票、退款、文档和历史稳定性，首次使用建议小额验证。
+              个人开发者优先看最近测试和可用性；企业用户应同时确认开票、退款、文档和历史稳定性，首次使用建议小额验证。
             </p>
           </div>
         </section>
 
         <section id="site-detail-data" className="mt-8">
-          <SiteDetailDataTabs supportedModels={supportedModels} pricing={pricing} latestTests={latestTests} />
+          <SiteDetailDataTabs supportedModels={supportedModels} latestTests={latestTests} />
         </section>
       </section>
     </main>

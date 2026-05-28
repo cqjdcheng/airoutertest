@@ -1,5 +1,6 @@
-import { Descriptions, Empty, Space, Table, Tabs, Tag } from "antd";
-import type { RelaySiteDetail, RelaySiteOffer, RelaySiteTestRecord } from "@/services/sites";
+import { useEffect, useState } from "react";
+import { Descriptions, Empty, Input, Space, Table, Tabs, Tag } from "antd";
+import { fetchSiteOffers, type RelaySiteDetail, type RelaySiteOffer, type RelaySiteTestRecord } from "@/services/sites";
 import { formatBeijingTime } from "@/utils/time";
 
 type SiteDetailContentProps = {
@@ -22,6 +23,43 @@ function price(input?: number, output?: number) {
 }
 
 export default function SiteDetailContent({ detail }: SiteDetailContentProps) {
+  const [offers, setOffers] = useState<RelaySiteOffer[]>([]);
+  const [offerLoading, setOfferLoading] = useState(false);
+  const [offerKeyword, setOfferKeyword] = useState("");
+  const [offerPage, setOfferPage] = useState(1);
+  const [offerPageSize, setOfferPageSize] = useState(20);
+  const [offerTotal, setOfferTotal] = useState(0);
+
+  async function loadOffers(options: { page?: number; pageSize?: number; keyword?: string } = {}) {
+    const nextPage = options.page ?? offerPage;
+    const nextPageSize = options.pageSize ?? offerPageSize;
+    const nextKeyword = options.keyword ?? offerKeyword;
+    setOfferLoading(true);
+
+    try {
+      const result = await fetchSiteOffers(detail.id, {
+        page: nextPage,
+        pageSize: nextPageSize,
+        keyword: nextKeyword,
+        status: "all"
+      });
+      setOffers(result.items);
+      setOfferPage(result.page);
+      setOfferPageSize(result.pageSize);
+      setOfferTotal(result.total);
+    } finally {
+      setOfferLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    setOffers([]);
+    setOfferKeyword("");
+    setOfferPage(1);
+    setOfferTotal(0);
+    void loadOffers({ page: 1, keyword: "" });
+  }, [detail.id]);
+
   return (
     <Tabs
       items={[
@@ -61,28 +99,55 @@ export default function SiteDetailContent({ detail }: SiteDetailContentProps) {
         {
           key: "models",
           label: "模型信息",
-          children: detail.offers.length ? (
-            <Table<RelaySiteOffer>
-              rowKey={(record) => String(record.id ?? `${record.modelId}-${record.officialModelId}`)}
-              dataSource={detail.offers}
-              pagination={false}
-              scroll={{ x: "max-content" }}
-              columns={[
-                { title: "模型", dataIndex: "displayName" },
-                { title: "Vendor", dataIndex: "vendor", width: 120 },
-                { title: "请求名称", dataIndex: "requestName", ellipsis: true },
-                { title: "接口类型", dataIndex: "apiType", width: 100 },
-                { title: "Official ID", dataIndex: "officialModelId", ellipsis: true },
-                { title: "官方价", render: (_, record) => price(record.officialInputPriceUsd, record.officialOutputPriceUsd) },
-                { title: "站点价", render: (_, record) => price(record.siteInputPriceUsd, record.siteOutputPriceUsd) },
-                { title: "折算价", render: (_, record) => price(record.effectiveInputPriceUsd, record.effectiveOutputPriceUsd) },
-                { title: "来源", dataIndex: "sourceType", width: 90 },
-                { title: "测试 Key", dataIndex: "hasTestApiKey", width: 100, render: (hasKey?: boolean) => <Tag color={hasKey ? "green" : "orange"}>{hasKey ? "已配置" : "未配置"}</Tag> },
-                { title: "状态", dataIndex: "status", width: 90, render: (status: string) => <Tag color={statusTone[status] ?? "default"}>{status}</Tag> }
-              ]}
-            />
-          ) : (
-            <Empty description="暂无模型报价" />
+          children: (
+            <Space direction="vertical" size={12} style={{ width: "100%" }}>
+              <Space wrap style={{ justifyContent: "space-between", width: "100%" }}>
+                <Input.Search
+                  allowClear
+                  value={offerKeyword}
+                  placeholder="搜索模型、请求名、厂商"
+                  style={{ width: 320 }}
+                  onSearch={(value) => {
+                    setOfferKeyword(value);
+                    void loadOffers({ page: 1, keyword: value });
+                  }}
+                  onChange={(event) => {
+                    setOfferKeyword(event.target.value);
+                    if (!event.target.value) {
+                      void loadOffers({ page: 1, keyword: "" });
+                    }
+                  }}
+                />
+                <Tag color="blue">共 {offerTotal} 个模型</Tag>
+              </Space>
+              <Table<RelaySiteOffer>
+                rowKey={(record) => String(record.id ?? `${record.modelId}-${record.officialModelId}`)}
+                loading={offerLoading}
+                dataSource={offers}
+                locale={{ emptyText: <Empty description="暂无模型报价" /> }}
+                pagination={{
+                  current: offerPage,
+                  pageSize: offerPageSize,
+                  total: offerTotal,
+                  showSizeChanger: true,
+                  onChange: (page, pageSize) => void loadOffers({ page, pageSize })
+                }}
+                scroll={{ x: "max-content" }}
+                columns={[
+                  { title: "模型", dataIndex: "displayName" },
+                  { title: "Vendor", dataIndex: "vendor", width: 120 },
+                  { title: "请求名称", dataIndex: "requestName", ellipsis: true },
+                  { title: "接口类型", dataIndex: "apiType", width: 100 },
+                  { title: "Official ID", dataIndex: "officialModelId", ellipsis: true },
+                  { title: "官方价", render: (_, record) => price(record.officialInputPriceUsd, record.officialOutputPriceUsd) },
+                  { title: "站点价", render: (_, record) => price(record.siteInputPriceUsd, record.siteOutputPriceUsd) },
+                  { title: "折算价", render: (_, record) => price(record.effectiveInputPriceUsd, record.effectiveOutputPriceUsd) },
+                  { title: "来源", dataIndex: "sourceType", width: 90 },
+                  { title: "测试 Key", dataIndex: "hasTestApiKey", width: 100, render: (hasKey?: boolean) => <Tag color={hasKey ? "green" : "orange"}>{hasKey ? "已配置" : "未配置"}</Tag> },
+                  { title: "状态", dataIndex: "status", width: 90, render: (status: string) => <Tag color={statusTone[status] ?? "default"}>{status}</Tag> }
+                ]}
+              />
+            </Space>
           )
         },
         {

@@ -43,13 +43,4 @@ public sealed class PublicCatalogController(PublicCatalogService publicCatalogSe
         return Ok(ApiResponseFactory.Success(HttpContext, result));
     }
 
-    [HttpGet("rankings/cheapest")]
-    public async Task<IActionResult> GetCheapestRankings([FromQuery] string? modelSlugs = null, [FromQuery] int limit = 5, CancellationToken cancellationToken = default)
-    {
-        var slugs = string.IsNullOrWhiteSpace(modelSlugs)
-            ? new[] { "gpt-4-1-mini", "claude-sonnet-4", "gemini-2-5-pro", "deepseek-chat", "qwen-max" }
-            : modelSlugs.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var result = await publicCatalogService.GetCheapestRankingsAsync(slugs, limit, cancellationToken);
-        return Ok(ApiResponseFactory.Success(HttpContext, result));
-    }
 }

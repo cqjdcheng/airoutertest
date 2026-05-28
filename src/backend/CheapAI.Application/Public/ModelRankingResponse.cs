@@ -6,7 +6,7 @@ public sealed class ModelRankingResponse
 {
     public RankingModelSummary Model { get; init; } = new();
 
-    public string RankingType { get; init; } = "price";
+    public string RankingType { get; init; } = "stability";
 
     public string Window { get; init; } = "7d";
 

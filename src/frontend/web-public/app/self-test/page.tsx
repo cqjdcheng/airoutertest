@@ -35,7 +35,7 @@ function SelfTestContent() {
                 <strong>本地缓存</strong>
               </div>
               <div className="metric-card mt-3">
-                <span>公共排行</span>
+                <span>公共记录</span>
                 <strong>不受影响</strong>
               </div>
             </>

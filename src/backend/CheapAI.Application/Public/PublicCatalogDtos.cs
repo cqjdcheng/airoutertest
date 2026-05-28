@@ -146,6 +146,10 @@ public sealed class PublicSiteStatus24hResponse
 
     public int TotalTests { get; init; }
 
+    public int TestedModelCount { get; init; }
+
+    public decimal? AverageScore { get; init; }
+
     public int HealthyCount { get; init; }
 
     public int WarningCount { get; init; }
@@ -155,6 +159,8 @@ public sealed class PublicSiteStatus24hResponse
     public DateTime? LastTestedAt { get; init; }
 
     public IReadOnlyList<PublicSiteStatusBucketResponse> Buckets { get; init; } = [];
+
+    public IReadOnlyList<PublicSiteStatusBucketResponse> DailyBuckets { get; init; } = [];
 }
 
 public sealed class PublicSiteStatusBucketResponse
@@ -169,15 +175,17 @@ public sealed class PublicSiteStatusBucketResponse
 
     public bool HasTest { get; init; }
 
+    public int TotalTests { get; init; }
+
+    public int SuccessCount { get; init; }
+
+    public decimal SuccessRate { get; init; }
+
+    public int TestedModelCount { get; init; }
+
+    public decimal? AverageScore { get; init; }
+
     public DateTime? TestedAt { get; init; }
-
-    public string? ModelName { get; init; }
-
-    public string? TestType { get; init; }
-
-    public string? Status { get; init; }
-
-    public decimal? RiskScore { get; init; }
 }
 
 public sealed class PublicModelCatalogItemResponse
@@ -194,18 +202,6 @@ public sealed class PublicModelCatalogItemResponse
 
     public string ApiType { get; init; } = "openai";
 
-    public decimal? OfficialInputPriceUsd { get; init; }
-
-    public decimal? OfficialOutputPriceUsd { get; init; }
-
-    public string? CheapestSiteSlug { get; init; }
-
-    public string? CheapestSiteName { get; init; }
-
-    public decimal? EffectiveInputPriceUsd { get; init; }
-
-    public decimal? EffectiveOutputPriceUsd { get; init; }
-
     public decimal? StabilityScore { get; init; }
 
     public decimal? RiskScore { get; init; }
@@ -213,13 +209,6 @@ public sealed class PublicModelCatalogItemResponse
     public string RiskLevel { get; init; } = "low";
 
     public int RelaySiteCount { get; init; }
-}
-
-public sealed class PublicCheapestRankingResponse
-{
-    public string ModelSlug { get; init; } = string.Empty;
-
-    public IReadOnlyList<ModelRankingItemResponse> Items { get; init; } = [];
 }
 
 public interface IPublicCatalogRepository
@@ -233,6 +222,4 @@ public interface IPublicCatalogRepository
     Task<PagedResult<PublicRelaySiteRankingItemResponse>> GetRelaySitesAsync(int page, int pageSize, CancellationToken cancellationToken = default);
 
     Task<PagedResult<PublicModelCatalogItemResponse>> GetModelsAsync(int page, int pageSize, CancellationToken cancellationToken = default);
-
-    Task<IReadOnlyList<PublicCheapestRankingResponse>> GetCheapestRankingsAsync(IReadOnlyList<string> modelSlugs, int limit, CancellationToken cancellationToken = default);
 }

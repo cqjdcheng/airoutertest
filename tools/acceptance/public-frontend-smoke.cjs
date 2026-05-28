@@ -46,12 +46,6 @@ const apiChecks = [
     assert: (data) => data?.code === 0 && Array.isArray(data?.data?.items)
   },
   {
-    id: "api-rankings",
-    name: "价格排行接口",
-    url: `${apiUrl}/api/v1/public/rankings/cheapest?modelSlugs=gpt-4-1-mini&limit=5`,
-    assert: (data) => data?.code === 0 && Array.isArray(data?.data)
-  },
-  {
     id: "api-tests-latest",
     name: "最新测试接口",
     url: `${apiUrl}/api/v1/public/tests/latest?page=1&pageSize=5`,
@@ -71,35 +65,35 @@ const pageChecks = [
     name: "首页桌面端",
     url: "/",
     viewport: { width: 1440, height: 1000 },
-    requiredText: ["先看低价，再看风险", "主流模型低价排行", "直接测试中转接口"]
+    requiredText: ["先看稳定性", "查看中转站", "查看测试记录"]
   },
   {
     id: "public-home-mobile",
     name: "首页移动端",
     url: "/",
     viewport: { width: 390, height: 844 },
-    requiredText: ["先看低价，再看风险", "主流模型低价排行"]
+    requiredText: ["先看稳定性", "查看中转站"]
   },
   {
     id: "models",
-    name: "模型大全",
+    name: "模型路径重定向",
     url: "/models",
     viewport: { width: 1440, height: 1000 },
-    requiredText: ["模型大全", "官方价", "最便宜中转"]
+    requiredText: ["中转站大全", "综合评分"]
   },
   {
     id: "rankings",
-    name: "价格排行",
+    name: "排行路径重定向",
     url: "/rankings",
     viewport: { width: 1440, height: 1000 },
-    requiredText: ["价格排行", "模型选择", "查看排行", "站点", "折算价"]
+    requiredText: ["中转站大全", "综合评分"]
   },
   {
     id: "legacy-ranking-redirect",
-    name: "旧价格排行路径兼容",
+    name: "旧排行路径兼容",
     url: "/rankings/gpt-4-1-mini",
     viewport: { width: 1440, height: 1000 },
-    requiredText: ["模型选择", "查看排行"]
+    requiredText: ["中转站大全", "综合评分"]
   },
   {
     id: "sites",
@@ -113,7 +107,7 @@ const pageChecks = [
     name: "中转站详情",
     url: "/sites/relay-port",
     viewport: { width: 1440, height: 1000 },
-    requiredText: ["支持模型", "价格摘要", "最近测试摘要"]
+    requiredText: ["支持模型", "最近测试摘要"]
   },
   {
     id: "tests",
@@ -160,25 +154,6 @@ const pageChecks = [
 ];
 
 const interactionChecks = [
-  {
-    id: "ranking-form-submit",
-    name: "价格排行模型选择提交",
-    run: async (page) => {
-      await page.goto(`${publicUrl}/rankings`, { waitUntil: "domcontentloaded", timeout: 30000 });
-      const select = page.locator("select[name='model']");
-      await select.waitFor({ state: "visible", timeout: 15000 });
-      const values = await select.locator("option").evaluateAll((options) => options.map((option) => option.value).filter(Boolean));
-      if (values.length === 0) {
-        throw new Error("没有可选模型");
-      }
-
-      await select.selectOption(values[0]);
-      await Promise.all([
-        page.waitForURL(/\/rankings\?model=/, { timeout: 15000 }),
-        page.getByRole("button", { name: "查看排行" }).click()
-      ]);
-    }
-  },
   {
     id: "tests-all-tab",
     name: "中转测试所有测试切换",
@@ -406,9 +381,9 @@ function writeReports() {
     "",
     "| 层级 | 覆盖目标 | 通过标准 |",
     "|---|---|---|",
-    "| API 合约 | 健康检查、站点配置、首页概览、模型、中转站、价格排行、测试记录、能力榜 | HTTP 2xx 且响应结构符合页面消费字段 |",
-    "| 页面加载 | 首页、模型大全、价格排行、中转站列表/详情、中转测试、能力榜、文章、自助测试、提交页 | 页面 HTTP < 400，无 Next Runtime Error，无关键文案缺失 |",
-    "| 交互冒烟 | 价格排行模型选择提交、中转测试“所有测试”切换 | 交互完成后页面无控制台错误和运行时错误 |",
+    "| API 合约 | 健康检查、站点配置、首页概览、模型、中转站、测试记录、能力榜 | HTTP 2xx 且响应结构符合页面消费字段 |",
+    "| 页面加载 | 首页、模型/排行旧路径重定向、中转站列表/详情、中转测试、能力榜、文章、自助测试、提交页 | 页面 HTTP < 400，无 Next Runtime Error，无关键文案缺失 |",
+    "| 交互冒烟 | 中转测试“所有测试”切换 | 交互完成后页面无控制台错误和运行时错误 |",
     "| 响应式 | 首页移动端核心区域 | 移动视口可渲染核心文案 |",
     "",
     "## 执行结果",

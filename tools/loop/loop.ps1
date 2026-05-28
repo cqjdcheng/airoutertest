@@ -228,7 +228,7 @@ function Invoke-SmokeChecks {
     Invoke-WebRequest -Uri "$($Config.apiUrl)/api/v1/public/home/overview" -UseBasicParsing | Out-Null
     Add-Result "public-home-overview" "PASS"
 
-    Invoke-WebRequest -Uri "$($Config.apiUrl)/api/v1/public/rankings/models/$($Config.seed.modelSlug)?rankingType=price&window=7d&page=1&pageSize=20" -UseBasicParsing | Out-Null
+    Invoke-WebRequest -Uri "$($Config.apiUrl)/api/v1/public/rankings/models/$($Config.seed.modelSlug)?rankingType=stability&window=7d&page=1&pageSize=20" -UseBasicParsing | Out-Null
     Add-Result "public-model-ranking" "PASS"
 
     Invoke-WebRequest -Uri "$($Config.apiUrl)/api/v1/public/sites/$($Config.seed.siteSlug)" -UseBasicParsing | Out-Null
@@ -242,9 +242,6 @@ function Invoke-SmokeChecks {
 
     Invoke-WebRequest -Uri "$($Config.apiUrl)/api/v1/public/models?page=1&pageSize=20" -UseBasicParsing | Out-Null
     Add-Result "public-models-list" "PASS"
-
-    Invoke-WebRequest -Uri "$($Config.apiUrl)/api/v1/public/rankings/cheapest?modelSlugs=$($Config.seed.modelSlug)&limit=5" -UseBasicParsing | Out-Null
-    Add-Result "public-cheapest-rankings" "PASS"
 
     $loginResponse = Invoke-WebRequest -Uri "$($Config.apiUrl)/api/v1/auth/login" -Method Post -ContentType "application/json" -Body $loginBody -UseBasicParsing
     Add-Result "admin-login-api" "PASS"

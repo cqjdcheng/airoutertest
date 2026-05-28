@@ -1,23 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import Link from "next/link";
+import { useMemo, useState, type CSSProperties } from "react";
 import { getJson, type PublicEnvelope } from "@/lib/api";
-import { formatDateTime, money, score, trustScore } from "@/lib/format";
+import { formatDateTime, score, trustScore } from "@/lib/format";
 import { selfTestConfidenceLabel, selfTestDeductionLabel, selfTestDisplayIndex, selfTestStatusLabel } from "@/lib/selfTestLabels";
 
-type TabKey = "models" | "pricing" | "tests";
+type TabKey = "models" | "tests";
 
 type SupportedModel = {
   modelSlug: string;
   modelName: string;
-};
-
-type SitePricing = {
-  modelSlug: string;
-  modelName: string;
-  effectiveInputPriceUsd?: number;
-  effectiveOutputPriceUsd?: number;
 };
 
 type SiteTestRecord = {
@@ -38,7 +30,6 @@ type SiteTestRecord = {
 
 type Props = {
   supportedModels: SupportedModel[];
-  pricing: SitePricing[];
   latestTests: SiteTestRecord[];
 };
 
@@ -69,28 +60,25 @@ type TestRecordDetail = SiteTestRecord & {
 
 const pageSizeMap: Record<TabKey, number> = {
   models: 24,
-  pricing: 12,
   tests: 10
 };
 
 const tabLabels: Record<TabKey, string> = {
   models: "支持模型",
-  pricing: "价格明细",
   tests: "最近测试记录"
 };
 
-export function SiteDetailDataTabs({ supportedModels, pricing, latestTests }: Props) {
+export function SiteDetailDataTabs({ supportedModels, latestTests }: Props) {
   const [activeTab, setActiveTab] = useState<TabKey>("models");
   const [pages, setPages] = useState<Record<TabKey, number>>({
     models: 1,
-    pricing: 1,
     tests: 1
   });
   const [selectedTest, setSelectedTest] = useState<TestRecordDetail | null>(null);
   const [testDetailLoading, setTestDetailLoading] = useState(false);
   const [testDetailError, setTestDetailError] = useState("");
 
-  const totalItems = getTotalItems(activeTab, supportedModels.length, pricing.length, latestTests.length);
+  const totalItems = getTotalItems(activeTab, supportedModels.length, latestTests.length);
   const pageSize = pageSizeMap[activeTab];
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const currentPage = Math.min(pages[activeTab], totalPages);
@@ -98,7 +86,6 @@ export function SiteDetailDataTabs({ supportedModels, pricing, latestTests }: Pr
   const pageEnd = pageStart + pageSize;
 
   const visibleModels = useMemo(() => supportedModels.slice(pageStart, pageEnd), [supportedModels, pageStart, pageEnd]);
-  const visiblePricing = useMemo(() => pricing.slice(pageStart, pageEnd), [pricing, pageStart, pageEnd]);
   const visibleTests = useMemo(() => latestTests.slice(pageStart, pageEnd), [latestTests, pageStart, pageEnd]);
 
   function updatePage(nextPage: number) {
@@ -132,10 +119,10 @@ export function SiteDetailDataTabs({ supportedModels, pricing, latestTests }: Pr
         <div>
           <p className="eyebrow">Detail Data</p>
           <h2 className="mt-2 text-xl font-semibold tracking-tight">站点明细数据</h2>
-          <p className="mt-1 text-sm text-[var(--text-secondary)]">完整模型、价格和最近测试记录集中在这里，避免影响上方关键判断。</p>
+          <p className="mt-1 text-sm text-[var(--text-secondary)]">完整模型和最近测试记录集中在这里，避免影响上方关键判断。</p>
         </div>
         <div className="site-detail-tabs__switch" role="tablist" aria-label="站点明细">
-          {(["models", "pricing", "tests"] as TabKey[]).map((tab) => (
+          {(["models", "tests"] as TabKey[]).map((tab) => (
             <button
               key={tab}
               type="button"
@@ -145,7 +132,7 @@ export function SiteDetailDataTabs({ supportedModels, pricing, latestTests }: Pr
               onClick={() => setActiveTab(tab)}
             >
               {tabLabels[tab]}
-              <span>{getTotalItems(tab, supportedModels.length, pricing.length, latestTests.length)}</span>
+              <span>{getTotalItems(tab, supportedModels.length, latestTests.length)}</span>
             </button>
           ))}
         </div>
@@ -155,61 +142,14 @@ export function SiteDetailDataTabs({ supportedModels, pricing, latestTests }: Pr
         <div className="site-detail-model-grid">
           {visibleModels.length ? (
             visibleModels.map((item) => (
-              <Link key={item.modelSlug} href={`/rankings?model=${encodeURIComponent(item.modelSlug)}`} className="site-detail-model-card">
+              <div key={item.modelSlug} className="site-detail-model-card">
                 <strong>{item.modelName}</strong>
                 <span>{item.modelSlug}</span>
-              </Link>
+              </div>
             ))
           ) : (
             <div className="empty-state">暂无模型数据</div>
           )}
-        </div>
-      ) : null}
-
-      {activeTab === "pricing" ? (
-        <div className="overflow-x-auto">
-          <table className="recommend-table">
-            <thead>
-              <tr>
-                <th>模型</th>
-                <th>折算价</th>
-                <th>价格状态</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visiblePricing.length ? (
-                visiblePricing.map((item) => (
-                  <tr key={`${item.modelSlug}-${item.effectiveInputPriceUsd}-${item.effectiveOutputPriceUsd}`}>
-                    <td>
-                      <strong>{item.modelName}</strong>
-                      <span>{item.modelSlug}</span>
-                    </td>
-                    <td>
-                      <strong>
-                        {money(item.effectiveInputPriceUsd)} / {money(item.effectiveOutputPriceUsd)}
-                      </strong>
-                      <span>输入 / 输出</span>
-                    </td>
-                    <td>
-                      <span className="status-pill" data-tone={hasValidPrice(item) ? "success" : "neutral"}>
-                        {hasValidPrice(item) ? "有效价格" : "待补充"}
-                      </span>
-                    </td>
-                    <td>
-                      <Link href={`/rankings?model=${encodeURIComponent(item.modelSlug)}`} className="text-button">
-                        查看排行
-                      </Link>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={4}>暂无价格数据</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
         </div>
       ) : null}
 
@@ -299,19 +239,9 @@ export function SiteDetailDataTabs({ supportedModels, pricing, latestTests }: Pr
   );
 }
 
-function getTotalItems(tab: TabKey, modelCount: number, pricingCount: number, testCount: number) {
+function getTotalItems(tab: TabKey, modelCount: number, testCount: number) {
   if (tab === "models") return modelCount;
-  if (tab === "pricing") return pricingCount;
   return testCount;
-}
-
-function hasValidPrice(item: SitePricing) {
-  return (
-    typeof item.effectiveInputPriceUsd === "number" &&
-    item.effectiveInputPriceUsd >= 0 &&
-    typeof item.effectiveOutputPriceUsd === "number" &&
-    item.effectiveOutputPriceUsd >= 0
-  );
 }
 
 function statusLabel(status: string) {
@@ -377,6 +307,9 @@ function SiteTestDetailModal({
   error: string;
   onClose: () => void;
 }) {
+  const resolvedScore = trustScore(detail.matchScore, detail.riskScore) ?? 0;
+  const scoreRingStyle = { "--score": `${resolvedScore}%` } as CSSProperties;
+
   return (
     <div className="challenge-modal" role="dialog" aria-modal="true" aria-labelledby="site-test-detail-title">
       <div className="challenge-modal__backdrop" onClick={onClose} />
@@ -393,16 +326,19 @@ function SiteTestDetailModal({
 
         {error ? <div className="relay-error mt-4">{error}</div> : null}
 
-        <div className="test-detail-summary mt-5">
-          <span className="status-pill" data-tone={statusTone(detail.status)}>
-            {loading ? "加载详情中" : statusLabel(detail.status)}
-          </span>
-          <span className="status-pill" data-tone="neutral">
-            分数 {score(trustScore(detail.matchScore, detail.riskScore))}
-          </span>
-          <span className="status-pill" data-tone="neutral">
-            {formatDateTime(detail.testedAt)}
-          </span>
+        <div className="test-detail-hero mt-5">
+          <div className="score-ring score-ring--large" style={scoreRingStyle}>
+            <strong>{score(resolvedScore, 0)}</strong>
+            <span>分</span>
+          </div>
+          <div className="test-detail-summary">
+            <span className="status-pill" data-tone={statusTone(detail.status)}>
+              {loading ? "加载详情中" : statusLabel(detail.status)}
+            </span>
+            <span className="status-pill" data-tone="neutral">
+              {formatDateTime(detail.testedAt)}
+            </span>
+          </div>
         </div>
 
         <p className="test-detail-copy">{detail.resultSummary || detail.errorMessage || "暂无摘要。"}</p>

@@ -8,15 +8,6 @@ public sealed class HomeOverviewResponse
 
     public HomeOverviewStatsResponse Stats { get; init; } = new();
 
-    public HomeWeatherResponse Weather { get; init; } = new();
-
-    public IReadOnlyList<RankingCardResponse> TopPriceCards { get; init; } = [];
-
-    public IReadOnlyList<RankingCardResponse> TopStabilityCards { get; init; } = [];
-
-    public IReadOnlyList<RiskHighlightResponse> RiskHighlights { get; init; } = [];
-
-    public DataPolicySummaryResponse DataPolicySummary { get; init; } = new();
 }
 
 public sealed class HomePopularModelResponse
@@ -39,78 +30,4 @@ public sealed class HomeOverviewStatsResponse
     public long TestCount { get; init; }
 
     public DateTime? LatestTestAt { get; init; }
-}
-
-public sealed class HomeWeatherResponse
-{
-    public int WindowHours { get; init; } = 24;
-
-    public string WeatherCode { get; init; } = "unknown";
-
-    public string WeatherLabel { get; init; } = "待观察";
-
-    public string Summary { get; init; } = "最近 24 小时暂无有效平台测试。";
-
-    public decimal SuccessRate { get; init; }
-
-    public int TotalTests { get; init; }
-
-    public int SuccessCount { get; init; }
-
-    public int FailedCount { get; init; }
-
-    public int ActiveSiteCount { get; init; }
-
-    public int DegradedSiteCount { get; init; }
-
-    public int HighRiskSiteCount { get; init; }
-
-    public int ActiveModelCount { get; init; }
-
-    public int? AverageFirstTokenMs { get; init; }
-
-    public DateTime? LastTestedAt { get; init; }
-
-    public IReadOnlyList<string> Highlights { get; init; } = [];
-}
-
-public sealed class RankingCardResponse
-{
-    public string ModelSlug { get; init; } = string.Empty;
-
-    public string ModelName { get; init; } = string.Empty;
-
-    public string SiteSlug { get; init; } = string.Empty;
-
-    public string SiteName { get; init; } = string.Empty;
-
-    public decimal? EffectiveInputPriceUsd { get; init; }
-
-    public decimal? EffectiveOutputPriceUsd { get; init; }
-
-    public decimal? StabilityScore { get; init; }
-
-    public decimal? RiskScore { get; init; }
-}
-
-public sealed class RiskHighlightResponse
-{
-    public string SiteSlug { get; init; } = string.Empty;
-
-    public string SiteName { get; init; } = string.Empty;
-
-    public string ModelSlug { get; init; } = string.Empty;
-
-    public string ModelName { get; init; } = string.Empty;
-
-    public decimal RiskScore { get; init; }
-}
-
-public sealed class DataPolicySummaryResponse
-{
-    public string PriceRule { get; init; } = "实际折算价为主排序字段";
-
-    public string StabilityRule { get; init; } = "公共排行只使用平台定时测试数据";
-
-    public string RiskRule { get; init; } = "风险分采用规则累加并封顶 100";
 }

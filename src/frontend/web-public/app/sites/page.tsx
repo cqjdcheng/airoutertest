@@ -41,7 +41,7 @@ export default async function SitesPage() {
         <PublicPageHero
           eyebrow="Relay Directory"
           title="中转站大全"
-          description="按统一分数整理中转站，优先看分数、24 小时状态和模型覆盖，再进入详情核对价格。"
+          description="按统一分数整理中转站，优先看稳定性、24 小时状态和最近测试。价格变化很快，不作为品质判断的核心依据。"
           aside={
             <>
               <div className="metric-card">

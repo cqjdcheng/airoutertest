@@ -25,6 +25,7 @@ public static class DependencyInjection
         services.AddScoped<PublicOverviewService>();
         services.AddScoped<PublicRankingService>();
         services.AddScoped<PublicSiteDetailService>();
+        services.AddScoped<PublicOutboundClickService>();
         services.AddScoped<PublicCatalogService>();
         services.AddScoped<SiteSettingsService>();
         return services;

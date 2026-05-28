@@ -51,7 +51,8 @@ CREATE TABLE IF NOT EXISTS relay_sites (
   PRIMARY KEY (id),
   UNIQUE KEY uk_relay_sites_slug (slug),
   KEY idx_relay_sites_status (status),
-  KEY idx_relay_sites_deleted_at (deleted_at)
+  KEY idx_relay_sites_deleted_at (deleted_at),
+  KEY idx_relay_sites_deleted_status (deleted_at, status)
 );
 --//@
 CREATE TABLE IF NOT EXISTS site_channels (
@@ -132,7 +133,8 @@ CREATE TABLE IF NOT EXISTS model_ranking_snapshots (
   final_score DECIMAL(10, 4) NULL,
   snapshot_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (id),
-  KEY idx_model_rankings_query (ranking_type, window_type, model_id, snapshot_at, rank_position)
+  KEY idx_model_rankings_query (ranking_type, window_type, model_id, snapshot_at, rank_position),
+  KEY idx_model_rankings_site_type_window (site_id, ranking_type, window_type)
 );
 --//@
 CREATE TABLE IF NOT EXISTS relay_offers (
@@ -197,8 +199,26 @@ CREATE TABLE IF NOT EXISTS test_records (
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   PRIMARY KEY (id),
   KEY idx_test_records_site_model_time (site_id, model_id, tested_at),
+  KEY idx_test_records_site_time (site_id, tested_at),
+  KEY idx_test_records_time_site_type (tested_at, site_id, test_type),
   KEY idx_test_records_type_status (test_type, status),
   KEY idx_test_records_self_test_id (self_test_id)
+);
+--//@
+CREATE TABLE IF NOT EXISTS site_outbound_clicks (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  site_id BIGINT UNSIGNED NOT NULL,
+  site_slug VARCHAR(128) NOT NULL,
+  target_type VARCHAR(24) NOT NULL,
+  target_url VARCHAR(512) NOT NULL,
+  source_path VARCHAR(255) NULL,
+  referrer_host VARCHAR(128) NULL,
+  ip_hash CHAR(64) NULL,
+  user_agent_hash CHAR(64) NULL,
+  clicked_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  KEY idx_site_outbound_clicks_site_time (site_id, clicked_at),
+  KEY idx_site_outbound_clicks_target_time (target_type, clicked_at)
 );
 --//@
 CREATE TABLE IF NOT EXISTS risk_evidences (

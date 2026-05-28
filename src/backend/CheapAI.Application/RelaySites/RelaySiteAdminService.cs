@@ -25,6 +25,16 @@ public sealed class RelaySiteAdminService(
         return result;
     }
 
+    public async Task<PagedResult<RelaySiteOfferResponse>> GetOffersAsync(ulong id, RelaySiteOfferQuery query, CancellationToken cancellationToken = default)
+    {
+        if (!await relaySiteRepository.ExistsByIdAsync(id, cancellationToken))
+        {
+            throw new AppNotFoundException("站点不存在");
+        }
+
+        return await relaySiteRepository.GetOffersAsync(id, query, cancellationToken);
+    }
+
     public async Task<ulong> CreateAsync(CreateRelaySiteRequest request, CancellationToken cancellationToken = default)
     {
         var slug = SlugHelper.Normalize(request.Slug, request.Name);
@@ -57,8 +67,7 @@ public sealed class RelaySiteAdminService(
 
     public async Task UpdateAsync(ulong id, UpdateRelaySiteRequest request, CancellationToken cancellationToken = default)
     {
-        var existing = await relaySiteRepository.GetByIdAsync(id, cancellationToken);
-        if (existing is null)
+        if (!await relaySiteRepository.ExistsByIdAsync(id, cancellationToken))
         {
             throw new AppNotFoundException("站点不存在");
         }
@@ -84,17 +93,35 @@ public sealed class RelaySiteAdminService(
             RecentReview = request.RecentReview,
             AutoTestEnabled = request.AutoTestEnabled,
             TestApiKey = request.TestApiKey,
-            TestIntervalMinutes = request.TestIntervalMinutes,
-            Offers = request.Offers
+            TestIntervalMinutes = request.TestIntervalMinutes
         };
 
         await relaySiteRepository.UpdateAsync(id, normalizedRequest, currentAdminAccessor.AdminUserId, cancellationToken);
     }
 
+    public async Task<RelaySiteOfferResponse> UpsertOfferAsync(ulong siteId, ulong? offerId, RelaySiteOfferUpsertRequest request, CancellationToken cancellationToken = default)
+    {
+        if (!await relaySiteRepository.ExistsByIdAsync(siteId, cancellationToken))
+        {
+            throw new AppNotFoundException("站点不存在");
+        }
+
+        return await relaySiteRepository.UpsertOfferAsync(siteId, offerId, request, currentAdminAccessor.AdminUserId, cancellationToken);
+    }
+
+    public async Task DeleteOfferAsync(ulong siteId, ulong offerId, CancellationToken cancellationToken = default)
+    {
+        if (!await relaySiteRepository.ExistsByIdAsync(siteId, cancellationToken))
+        {
+            throw new AppNotFoundException("站点不存在");
+        }
+
+        await relaySiteRepository.DeleteOfferAsync(siteId, offerId, currentAdminAccessor.AdminUserId, cancellationToken);
+    }
+
     public async Task UpdateStatusAsync(ulong id, UpdateRelaySiteStatusRequest request, CancellationToken cancellationToken = default)
     {
-        var existing = await relaySiteRepository.GetByIdAsync(id, cancellationToken);
-        if (existing is null)
+        if (!await relaySiteRepository.ExistsByIdAsync(id, cancellationToken))
         {
             throw new AppNotFoundException("站点不存在");
         }
@@ -104,8 +131,7 @@ public sealed class RelaySiteAdminService(
 
     public async Task DeleteAsync(ulong id, CancellationToken cancellationToken = default)
     {
-        var existing = await relaySiteRepository.GetByIdAsync(id, cancellationToken);
-        if (existing is null)
+        if (!await relaySiteRepository.ExistsByIdAsync(id, cancellationToken))
         {
             throw new AppNotFoundException("站点不存在");
         }
